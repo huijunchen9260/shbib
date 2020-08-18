@@ -1,0 +1,473 @@
+#!/bin/sh
+
+# Stolen from shfm
+esc() {
+    case $1 in
+        # vt100 (IL is vt102) (DECTCEM is vt520)
+	CUP)     printf '%s[%s;%sH' "$esc_c" "$2" "$3" ;; # cursor to LINES($2), COLUMNS($3)
+        CUU)     printf '%s[%sA'    "$esc_c" "$2"      ;; # cursor up
+        CUD)     printf '%s[%sB'    "$esc_c" "$2"      ;; # cursor down
+        CUR)     printf '%s[%sC'    "$esc_c" "$2"      ;; # cursor right
+	CUL)     printf '%s[%sD'    "$esc_c" "$2"      ;; # cursor left
+	DECAWM)  printf '%s[?7%s'   "$esc_c" "$2"      ;; # (h: set; l: unset) line wrap
+        DECRC)   printf '%s8'       "$esc_c"           ;; # cursor restore
+        DECSC)   printf '%s7'       "$esc_c"           ;; # cursor save
+        DECSTBM) printf '%s[%s;%sr' "$esc_c" "$2" "$3" ;; # scroll region
+	DECTCEM) printf '%s[?25%s'  "$esc_c" "$2"      ;; # (h: show; l: hide) cursor visible
+        ED[0-2]) printf '%s[%sJ'    "$esc_c" "${1#ED}" ;; # clear screen
+        EL[0-2]) printf '%s[%sK'    "$esc_c" "${1#EL}" ;; # clear line
+        IL)      printf '%s[%sL'    "$esc_c" "$2"      ;; # insert line
+        SGR)     printf '%s[%s;%sm' "$esc_c" "$2" "$3" ;; # colors
+
+        # xterm (since 1988, supported widely)
+	screen_alt) printf '%s[?1049%s' "$esc_c" "$2" ;; # (h: to; l: back from) alternate buffer
+    esac
+}
+
+term_setup() {
+    stty=$(stty -g)
+    stty -icanon -echo
+    esc screen_alt h
+    esc DECAWM l
+    esc DECTCEM l
+    esc ED2
+    esc DECSTBM 1 "$((LINES - 2))"
+}
+
+term_resize() {
+    # false-positive, behavior intentional, globbing is disabled.
+    # shellcheck disable=2046
+    {
+        set -f
+        set +f -- $(stty size)
+    }
+
+    LINES=$1 COLUMNS=$2
+
+    # space for status_line
+    bottom=$((LINES - 2))
+}
+
+term_reset() {
+    esc DECAWM h     >&2
+    esc DECTCEM h    >&2
+    esc ED2          >&2
+    esc DECSTBM      >&2
+    esc screen_alt l >&2
+    stty "$stty"
+}
+
+redraw() {
+    list_print "$@"
+    status_line "$#"
+}
+
+list_print() {
+    esc ED2
+    esc CUP
+
+    i=1
+    end=$((bottom + 1))
+    mid=$((bottom / 4 < 5 ? 1 : bottom / 4))
+
+    case $hist in
+        2) # redraw after cmd run
+            shift "$((y > y2 ? y - y2 : 0))"
+        ;;
+
+        1) # redraw after go-to-parent
+            hist_search "$@"
+            shift "$((y >= bottom ? y - mid : 0))"
+        ;;
+
+        *) # everything else
+            shift "$((y >= bottom ? y - bottom : 0))"
+        ;;
+    esac
+
+    for file do
+        case $i in
+            "$y2") esc SGR 0 7
+        esac
+
+        case $((i - end)) in
+            -*)
+                line_format "$file"
+                esc CUD
+            ;;
+        esac
+
+        i=$((i + 1))
+    done
+
+    esc CUP "$((y > y2 ? y2 : y))"
+}
+
+line_print() {
+    offset=$1
+
+    case $offset in
+        "$y") esc SGR 0 7
+    esac
+
+    shift "$offset"
+
+    case $offset in
+        "$y") cur=$1
+    esac
+
+    line_format "$1"
+}
+
+line_format() {
+    # file_escape "$1"
+    esc EL0
+    [ -d "$1" ] && esc SGR 1 34
+    case "$token" in
+        's') printf %s "$1" ;;
+	'') printf %s "${1##*/}" ;;
+    esac
+    [ -d "$1" ] && printf /
+    esc SGR
+    printf '\r'
+}
+
+file_escape() {
+    tmp=${1##*/} safe=
+
+    # loop over string char by char
+    while c=${tmp%"${tmp#?}"}; do
+        case $c in
+            '')          return ;;
+            # [[:cntrl:]]) safe=$safe\? ;;
+            *)           safe=$safe$c ;;
+        esac
+
+        tmp=${tmp#?}
+    done
+}
+
+status_line() {
+    esc DECSC
+    esc CUP "$LINES"
+
+    case $USER in
+        root) esc SGR 31 7 ;;
+           *) esc SGR 34 7 ;;
+    esac
+
+    printf '%*s\r%s ' "$COLUMNS" "" "($y/$1)"
+
+    case $ltype in
+        '') printf %s "$BIB_PDF_PATH" ;;
+         *) printf %s "$ltype"
+    esac
+
+    esc SGR
+    esc DECRC
+}
+
+term_scroll_up() {
+    case $y in
+        -*|0|1) return ;;
+	# $#) esc CUU 5
+	#     y=$((y - 5))
+	#     line_print "$#" "$@"
+	#     line_print "$y" "$@"
+	#     status_line "$#"
+	#     return
+	#     ;;
+    esac
+
+    case "$token" in
+        's')
+	    y=$((y - 6))
+
+	    line_print "$((y + 1))" "$@"
+	    line_print "$((y + 2))" "$@"
+	    line_print "$((y + 3))" "$@"
+	    line_print "$((y + 4))" "$@"
+	    line_print "$((y + 5))" "$@"
+	    line_print "$((y + 6))" "$@"
+	    case $y2 in
+		1-5) esc IL ;;
+		*) esc CUU 6 ; y2=$((y2 > 6 ? y2 - 6 : 1))
+	    esac
+	    line_print "$y" "$@"
+	    status_line "$#"
+	    ;;
+	'')
+	    y=$((y - 1))
+
+	    line_print "$((y + 1))" "$@"
+
+	    case $y2 in
+		1) esc IL ;;
+		*) esc CUU; y2=$((y2 > 1 ? y2 - 1 : 1))
+	    esac
+
+	    line_print "$y" "$@"
+	    status_line "$#"
+	    ;;
+    esac
+
+}
+
+
+term_scroll_down() {
+    case "$token" in
+        's')
+	    # case $((y - $#)) in
+	    #     -[1-6]) return ;;
+	    # esac
+
+	    # case $((y - $#)) in
+		# [6-9]*) return ;;
+		# [0-5]*) term_scroll_up "$@"; return ;;
+	    # esac
+
+	    case $((y - $#)) in
+		[0-9]*) return
+	    esac
+
+	    # y=$((y + 6 < $# ? y + 6 : $#))
+	    y=$((y + 6))
+	    y2=$((y2 + 6 < bottom ? y2 + 6 : bottom))
+
+	    line_print "$((y - 6))" "$@"
+	    printf '\n'
+	    line_print "$((y - 5))" "$@"
+	    printf '\n'
+	    line_print "$((y - 4))" "$@"
+	    printf '\n'
+	    line_print "$((y - 3))" "$@"
+	    printf '\n'
+	    line_print "$((y - 2))" "$@"
+	    printf '\n'
+	    line_print "$((y - 1))" "$@"
+	    printf '\n'
+	    line_print "$y" "$@"
+	    status_line "$#"
+	    ;;
+	'')
+	    case $((y - $#)) in
+		[0-9]*) return
+	    esac
+
+	    y=$((y + 1))
+	    y2=$((y2 + 1 < bottom ? y2 + 1 : bottom))
+
+	    line_print "$((y - 1))" "$@"
+	    printf '\n'
+	    line_print "$y" "$@"
+	    status_line "$#"
+	    ;;
+    esac
+}
+
+prompt() {
+    esc DECSC
+    esc CUP "$LINES"
+    printf %s "$1"
+    esc DECTCEM h
+    esc EL0
+
+    case $2 in
+        r)
+            stty icanon echo
+            read -r ans ||:
+            stty -icanon -echo
+        ;;
+    esac
+
+    esc DECRC
+    esc DECTCEM l
+    status_line "($y/$#) $PWD"
+}
+
+cmd_run() {
+    stty "$stty"
+    esc DECTCEM h
+    esc DECSTBM
+    esc ED2
+    "$@" ||:
+    esc DECSTBM 1 "$((LINES - 2))"
+    esc DECTCEM l
+    stty -icanon -echo
+    hist=2
+}
+
+ref_search() {
+    token=s
+    url=
+    while c=${ans%"${ans#?}"}; do
+	case $c in
+	    '') break ;;
+	    [[:space:]]) url=$url\+ ;;
+	    *)           url=$url$c ;;
+	esac
+
+	ans=${ans#?}
+    done
+
+    ltype="Searching..."
+    status_line "$#"
+    html="$(curl -s "https://search.crossref.org/?q=$url")"
+    TMP="${html##*<table>}"
+    TMP2="${TMP%%</table>*}"
+    list=$(printf '%s' "$TMP2" |
+	sed "
+		s/<p class='lead'>/@/g;
+		s/<[^>]*>//g
+		/^$/ d
+" | 	awk 'BEGIN {
+	    RS="@";
+	}
+	{
+	    n=split($0, sp, /\n/)
+	    title = sp[2]
+	    category = sp[3]
+	    for (i=1; i in sp; i++) {
+		if (match(sp[i], /^[0-9][0-9][0-9][0-9]$/))
+		    year = sp[i]
+		else if (match(sp[i], /Authors:.*/))
+		    author = sp[i]
+		else if (match(sp[i-1], /^in$/))
+		    journal = sp[i]
+                else if (match(sp[i], /(https:\/\/)?10\.[0-9][0-9][0-9][0-9][0-9.]*\/[^[:space:]]*/))
+                    doi = sp[i]
+		}
+		print "|", "Title: " title, "\n\tCategory: " category, "\n\t" journal, "\n\tYear: " year, "\n\tAuthor: " author, "\n\tDOI: " doi
+	    }' | sed "1,6 d")
+    # IFS='|'
+    IFS="$nl"
+    set -- $list
+    unset IFS
+    y=1 y2=1 cur=$1 ltype="Result"
+    redraw "$@"
+    status_line "$#"
+
+}
+
+main() {
+    set -e
+    esc_c=$(printf '\033')
+    bs_char=$(printf '\177')
+
+    set -- $BIB_PDF_PATH/*.pdf
+    cur=$1
+
+    term_resize
+    term_setup
+
+    trap 'term_reset'  EXIT INT
+    trap 'term_resize; term_setup; y=1 y2=1; redraw "$@"' WINCH
+    # trap 'term_resize; term_setup; hist=2; redraw "$@"' WINCH
+    # trap 'term_resize; term_setup; redraw "$@"' WINCH
+
+    y=1 y2=1
+    redraw "$@"
+
+    while key=$(dd ibs=1 count=1 2>/dev/null); do
+        case $key${esc:=0} in
+            k?|A2)
+		case "$token" in
+		    's')
+			IFS="$nl"
+			set -- $list
+			unset IFS
+			term_scroll_up "$@"
+			;;
+		    '') term_scroll_up "$@" ;;
+		esac
+            ;;
+
+            j?|B2)
+		case "$token" in
+		    's')
+			IFS="$nl"
+			set -- $list
+			unset IFS
+			term_scroll_down "$@"
+			;;
+		    '') term_scroll_down "$@" ;;
+		esac
+            ;;
+            l?|C2|"$esc") # ARROW RIGHT
+		case "$token" in
+		    's') ;;
+		    '')
+			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$cur"
+			redraw "$@"
+			;;
+		esac
+            ;;
+            h?|D2|"$bs_char"?) # ARROW LEFT
+		case "$token" in
+		    's')
+			unset token
+			set -- $BIB_PDF_PATH/*.pdf
+			y=1 y2=1 cur=$1
+			redraw "$@"
+			status_line "$#"
+			;;
+		esac
+            ;;
+	    s?)
+		prompt "Search in Crossref: " r
+		y=1 y2=1 cur=$1
+		ref_search "$@"
+		# unset token
+	    ;;
+            g?)
+                case $y in
+                    1) continue
+                esac
+
+                y=1 y2=1 cur=$1
+                redraw "$@"
+            ;;
+
+            G?)
+                y=$#
+                y2=$(($# < bottom ? $# : bottom))
+                redraw "$@"
+            ;;
+            /?)
+                prompt / r
+
+                # word splitting and globbing intentional
+                # shellcheck disable=2086
+                set -- $BIB_PDF_PATH/$ans*.pdf
+
+                case $1$# in
+                    "$ans*1") set -- 'no results'
+                esac
+
+                y=1 y2=1 cur=$1 ltype="search $BIB_PDF_PATH/$ans*"
+                redraw "$@"
+                status_line "$#"
+            ;;
+            \??)
+                 set -- 'k - up' \
+			'j - down' \
+		        'l - right' \
+		        'h - left' \
+                        'g - go to top' \
+                        'G - go to bottom' \
+                        '/ - search in $BIB_PDF_PATH/<input>*' \
+                        '? - show keybinds'
+
+                y=1 y2=1 cur=$1 ltype=keybinds
+                redraw "$@"
+                status_line "$#"
+            ;;
+            q?) exit 0 ;;
+	esac
+    done
+}
+
+nl='
+'
+tab='	'
+main "$@" >/dev/tty
