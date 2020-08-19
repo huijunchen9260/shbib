@@ -59,8 +59,8 @@ term_reset() {
 
 redraw() {
     list_print "$@"
-    # status_line "$#"
-    status_line "$y2"
+    status_line "$#"
+    # status_line "$y2"
 }
 
 list_print() {
@@ -222,8 +222,8 @@ term_scroll_up() {
 	    esac
 
 	    arg_print "$y" "$@"
-	    # status_line "$#"
-	    status_line "$y2"
+	    status_line "$#"
+	    # status_line "$y2"
 	    ;;
 	'')
 	    y=$((y - 1))
@@ -257,8 +257,8 @@ term_scroll_down() {
 	    arg_print "$((y - 1))" "$@"
 	    printf '\n'
 	    arg_print "$y" "$@"
-	    # status_line "$#"
-	    status_line "$y2"
+	    status_line "$#"
+	    # status_line "$y2"
 	    ;;
 	'')
 	    case $((y - $#)) in
@@ -323,41 +323,33 @@ ref_search() {
 
     ltype="Searching..."
     status_line "$#"
-    # html="$(curl -s "https://search.crossref.org/?q=$url")"
-    # TMP="${html##*<table>}"
-    # TMP2="${TMP%%</table>*}"
-    # list=$(printf '%s' "$TMP2" |
-	# sed "
-		# s/<p class='lead'>/@/g;
-		# s/<[^>]*>//g
-		# /^$/ d
-# " | 	awk 'BEGIN {
-	    # RS="@";
-	# }
-	# {
-	    # n=split($0, sp, /\n/)
-	    # title = sp[2]
-	    # category = sp[3]
-	    # for (i=1; i in sp; i++) {
-		# if (match(sp[i], /^[0-9][0-9][0-9][0-9]$/))
-		    # year = sp[i]
-		# else if (match(sp[i], /Authors:.*/))
-		    # author = sp[i]
-		# else if (match(sp[i-1], /^in$/))
-		    # journal = sp[i]
-    #             else if (match(sp[i], /(https:\/\/)?10\.[0-9][0-9][0-9][0-9][0-9.]*\/[^[:space:]]*/))
-    #                 doi = sp[i]
-		# }
-		# print "|", "Title: " title, "\n\tCategory: " category, "\n\t" journal, "\n\tYear: " year, "\n\tAuthor: " author, "\n\tDOI: " doi
-	    # }' | sed "1,6 d")
-    # DEBUG
-    # list=$(cat -u $HOME/Testing/output)
-    # IFS="|"
-    # set -- $list
-    # y=1 y2=1 cur=$1 ltype="Result"
-    # redraw "$@"
-    # unset IFS
-
+    html="$(curl -s "https://search.crossref.org/?q=$url")"
+    TMP="${html##*<table>}"
+    TMP2="${TMP%%</table>*}"
+    list=$(printf '%s' "$TMP2" |
+	sed "
+		s/<p class='lead'>/@/g;
+		s/<[^>]*>//g
+		/^$/ d
+" | 	awk 'BEGIN {
+	    RS="@";
+	}
+	{
+	    n=split($0, sp, /\n/)
+	    title = sp[2]
+	    category = sp[3]
+	    for (i=1; i in sp; i++) {
+		if (match(sp[i], /^[0-9][0-9][0-9][0-9]$/))
+		    year = sp[i]
+		else if (match(sp[i], /Authors:.*/))
+		    author = sp[i]
+		else if (match(sp[i-1], /^in$/))
+		    journal = sp[i]
+                else if (match(sp[i], /(https:\/\/)?10\.[0-9][0-9][0-9][0-9][0-9.]*\/[^[:space:]]*/))
+                    doi = sp[i]
+		}
+		print "|", "Title: " title, "\n\tCategory: " category, "\n\t" journal, "\n\tYear: " year, "\n\tAuthor: " author, "\n\tDOI: " doi
+	    }' | sed "1,6 d")
 }
 
 main() {
@@ -423,7 +415,7 @@ main() {
 	    s?)
 		prompt "Search in Crossref: " r
 		ref_search "$@"
-		list=$(cat -u $HOME/Testing/output)
+		# list=$(cat -u $HOME/Testing/output)
 		IFS="|"
 		set -- $list
 		shift 1
