@@ -85,25 +85,62 @@ list_print() {
         ;;
     esac
 
-    for file do
-        case $i in
-            "$y2") esc SGR 0 7
-        esac
+    case "$token" in
+        's')
+	    for file do
+		case $i in
+		    "$y2") esc SGR 0 7
+		esac
 
-        case $((i - end)) in
-            -*)
-                line_format "$file"
-                esc CUD
-            ;;
-        esac
+		case $((i - end)) in
+		    -*)
+			para_format "$file"
+			esc CUD 5
+		    ;;
+		esac
 
-        i=$((i + 1))
-    done
+		i=$((i + 1))
+	    done
+	    ;;
+	'')
+	    for file do
+		case $i in
+		    "$y2") esc SGR 0 7
+		esac
+
+		case $((i - end)) in
+		    -*)
+			line_format "$file"
+			esc CUD
+		    ;;
+		esac
+
+		i=$((i + 1))
+	    done
+	    ;;
+    esac
+    # for file do
+    #     case $i in
+    #         "$y2") esc SGR 0 7
+    #     esac
+
+    #     case $((i - end)) in
+    #         -*)
+		# case "$token" in
+		    # 's') para_format "$file" ;;
+		    # '') line_format "$file" ;;
+		# esac
+    #             esc CUD
+    #         ;;
+    #     esac
+
+    #     i=$((i + 1))
+    # done
 
     esc CUP "$((y > y2 ? y2 : y))"
 }
 
-line_print() {
+arg_print() {
     offset=$1
 
     case $offset in
@@ -116,35 +153,31 @@ line_print() {
         "$y") cur=$1
     esac
 
-    line_format "$1"
+    case "$token" in
+        's') para_format "$1" ;;
+	'') line_format "$1" ;;
+    esac
 }
 
 line_format() {
-    # file_escape "$1"
     esc EL0
-    [ -d "$1" ] && esc SGR 1 34
-    case "$token" in
-        's') printf %s "$1" ;;
-	'') printf %s "${1##*/}" ;;
-    esac
-    [ -d "$1" ] && printf /
+    printf %s "${1##*/}"
     esc SGR
     printf '\r'
 }
 
-file_escape() {
-    tmp=${1##*/} safe=
+para_format() {
+    esc EL0
+    printf %s "${1%$nl}"
+    esc SGR
+    printf '\r'
+}
 
-    # loop over string char by char
-    while c=${tmp%"${tmp#?}"}; do
-        case $c in
-            '')          return ;;
-            # [[:cntrl:]]) safe=$safe\? ;;
-            *)           safe=$safe$c ;;
-        esac
-
-        tmp=${tmp#?}
-    done
+arg_format() {
+    esc EL0
+    printf %s "$1"
+    esc SGR
+    printf '\r'
 }
 
 status_line() {
@@ -170,83 +203,54 @@ status_line() {
 term_scroll_up() {
     case $y in
         -*|0|1) return ;;
-	# $#) esc CUU 5
-	#     y=$((y - 5))
-	#     line_print "$#" "$@"
-	#     line_print "$y" "$@"
-	#     status_line "$#"
-	#     return
-	#     ;;
     esac
 
     case "$token" in
         's')
-	    y=$((y - 6))
+	    y=$((y - 1))
 
-	    line_print "$((y + 1))" "$@"
-	    line_print "$((y + 2))" "$@"
-	    line_print "$((y + 3))" "$@"
-	    line_print "$((y + 4))" "$@"
-	    line_print "$((y + 5))" "$@"
-	    line_print "$((y + 6))" "$@"
+	    arg_print "$((y + 1))" "$@"
+
 	    case $y2 in
-		1-5) esc IL ;;
-		*) esc CUU 6 ; y2=$((y2 > 6 ? y2 - 6 : 1))
+		1) esc IL ;;
+		*) esc CUU 5; y2=$((y2 > 1 ? y2 - 1 : 1))
 	    esac
-	    line_print "$y" "$@"
+
+	    arg_print "$y" "$@"
 	    status_line "$#"
+	    # redraw "$@"
 	    ;;
 	'')
 	    y=$((y - 1))
 
-	    line_print "$((y + 1))" "$@"
+	    arg_print "$((y + 1))" "$@"
 
 	    case $y2 in
 		1) esc IL ;;
 		*) esc CUU; y2=$((y2 > 1 ? y2 - 1 : 1))
 	    esac
 
-	    line_print "$y" "$@"
+	    arg_print "$y" "$@"
 	    status_line "$#"
 	    ;;
     esac
-
 }
 
 
 term_scroll_down() {
     case "$token" in
         's')
-	    # case $((y - $#)) in
-	    #     -[1-6]) return ;;
-	    # esac
-
-	    # case $((y - $#)) in
-		# [6-9]*) return ;;
-		# [0-5]*) term_scroll_up "$@"; return ;;
-	    # esac
-
 	    case $((y - $#)) in
 		[0-9]*) return
 	    esac
 
-	    # y=$((y + 6 < $# ? y + 6 : $#))
-	    y=$((y + 6))
-	    y2=$((y2 + 6 < bottom ? y2 + 6 : bottom))
+	    y=$((y + 1))
+	    y2=$((y2 + 1 < bottom ? y2 + 1 : bottom))
 
-	    line_print "$((y - 6))" "$@"
+	    esc CUU 5
+	    arg_print "$((y - 1))" "$@"
 	    printf '\n'
-	    line_print "$((y - 5))" "$@"
-	    printf '\n'
-	    line_print "$((y - 4))" "$@"
-	    printf '\n'
-	    line_print "$((y - 3))" "$@"
-	    printf '\n'
-	    line_print "$((y - 2))" "$@"
-	    printf '\n'
-	    line_print "$((y - 1))" "$@"
-	    printf '\n'
-	    line_print "$y" "$@"
+	    arg_print "$y" "$@"
 	    status_line "$#"
 	    ;;
 	'')
@@ -257,9 +261,9 @@ term_scroll_down() {
 	    y=$((y + 1))
 	    y2=$((y2 + 1 < bottom ? y2 + 1 : bottom))
 
-	    line_print "$((y - 1))" "$@"
+	    arg_print "$((y - 1))" "$@"
 	    printf '\n'
-	    line_print "$y" "$@"
+	    arg_print "$y" "$@"
 	    status_line "$#"
 	    ;;
     esac
@@ -312,40 +316,40 @@ ref_search() {
 
     ltype="Searching..."
     status_line "$#"
-    html="$(curl -s "https://search.crossref.org/?q=$url")"
-    TMP="${html##*<table>}"
-    TMP2="${TMP%%</table>*}"
-    list=$(printf '%s' "$TMP2" |
-	sed "
-		s/<p class='lead'>/@/g;
-		s/<[^>]*>//g
-		/^$/ d
-" | 	awk 'BEGIN {
-	    RS="@";
-	}
-	{
-	    n=split($0, sp, /\n/)
-	    title = sp[2]
-	    category = sp[3]
-	    for (i=1; i in sp; i++) {
-		if (match(sp[i], /^[0-9][0-9][0-9][0-9]$/))
-		    year = sp[i]
-		else if (match(sp[i], /Authors:.*/))
-		    author = sp[i]
-		else if (match(sp[i-1], /^in$/))
-		    journal = sp[i]
-                else if (match(sp[i], /(https:\/\/)?10\.[0-9][0-9][0-9][0-9][0-9.]*\/[^[:space:]]*/))
-                    doi = sp[i]
-		}
-		print "|", "Title: " title, "\n\tCategory: " category, "\n\t" journal, "\n\tYear: " year, "\n\tAuthor: " author, "\n\tDOI: " doi
-	    }' | sed "1,6 d")
-    # IFS='|'
-    IFS="$nl"
-    set -- $list
-    unset IFS
-    y=1 y2=1 cur=$1 ltype="Result"
-    redraw "$@"
-    status_line "$#"
+    # html="$(curl -s "https://search.crossref.org/?q=$url")"
+    # TMP="${html##*<table>}"
+    # TMP2="${TMP%%</table>*}"
+    # list=$(printf '%s' "$TMP2" |
+	# sed "
+		# s/<p class='lead'>/@/g;
+		# s/<[^>]*>//g
+		# /^$/ d
+# " | 	awk 'BEGIN {
+	    # RS="@";
+	# }
+	# {
+	    # n=split($0, sp, /\n/)
+	    # title = sp[2]
+	    # category = sp[3]
+	    # for (i=1; i in sp; i++) {
+		# if (match(sp[i], /^[0-9][0-9][0-9][0-9]$/))
+		    # year = sp[i]
+		# else if (match(sp[i], /Authors:.*/))
+		    # author = sp[i]
+		# else if (match(sp[i-1], /^in$/))
+		    # journal = sp[i]
+    #             else if (match(sp[i], /(https:\/\/)?10\.[0-9][0-9][0-9][0-9][0-9.]*\/[^[:space:]]*/))
+    #                 doi = sp[i]
+		# }
+		# print "|", "Title: " title, "\n\tCategory: " category, "\n\t" journal, "\n\tYear: " year, "\n\tAuthor: " author, "\n\tDOI: " doi
+	    # }' | sed "1,6 d")
+    # DEBUG
+    # list=$(cat -u $HOME/Testing/output)
+    # IFS="|"
+    # set -- $list
+    # y=1 y2=1 cur=$1 ltype="Result"
+    # redraw "$@"
+    # unset IFS
 
 }
 
@@ -370,32 +374,26 @@ main() {
 
     while key=$(dd ibs=1 count=1 2>/dev/null); do
         case $key${esc:=0} in
-            k?|A2)
-		case "$token" in
-		    's')
-			IFS="$nl"
-			set -- $list
-			unset IFS
-			term_scroll_up "$@"
-			;;
-		    '') term_scroll_up "$@" ;;
-		esac
-            ;;
-
+            k?|A2) term_scroll_up "$@" ;;
             j?|B2)
-		case "$token" in
-		    's')
-			IFS="$nl"
-			set -- $list
-			unset IFS
-			term_scroll_down "$@"
-			;;
-		    '') term_scroll_down "$@" ;;
-		esac
-            ;;
+		# case "$token" in
+		#     's')
+		# 	list=$(cat -u $HOME/Testing/output)
+		# 	IFS="|"
+		# 	set -- $list
+		# 	shift 1
+		# 	cur=$1 ltype="Result"
+		# 	redraw "$@"
+		# 	;;
+		#     '') term_scroll_down "$@" ;;
+		# esac
+		term_scroll_down "$@"
+		;;
             l?|C2|"$esc") # ARROW RIGHT
 		case "$token" in
-		    's') ;;
+		    's')
+			doi=
+			;;
 		    '')
 			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$cur"
 			redraw "$@"
@@ -403,21 +401,27 @@ main() {
 		esac
             ;;
             h?|D2|"$bs_char"?) # ARROW LEFT
+		case $ltype in
+		    *) ltype= ;;
+		esac
 		case "$token" in
 		    's')
 			unset token
 			set -- $BIB_PDF_PATH/*.pdf
 			y=1 y2=1 cur=$1
 			redraw "$@"
-			status_line "$#"
 			;;
 		esac
             ;;
 	    s?)
 		prompt "Search in Crossref: " r
-		y=1 y2=1 cur=$1
 		ref_search "$@"
-		# unset token
+		list=$(cat -u $HOME/Testing/output)
+		IFS="|"
+		set -- $list
+		shift 1
+		y=1 y2=1 cur=$1 ltype="Result"
+		redraw "$@"
 	    ;;
             g?)
                 case $y in
@@ -446,7 +450,6 @@ main() {
 
                 y=1 y2=1 cur=$1 ltype="search $BIB_PDF_PATH/$ans*"
                 redraw "$@"
-                status_line "$#"
             ;;
             \??)
                  set -- 'k - up' \
