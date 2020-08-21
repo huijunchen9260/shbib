@@ -3,7 +3,7 @@
 # Variable explain:
 # y: the current argument
 # pos: the current position on argument y
-# y2: the final position (invert color using SGR 33 7)
+# y2: the cursor's final position (invert color using SGR 33 7)
 # num: numbers of lines per argument
 # fin: bottom for printable area, depends on num
 # token: indicator for actions
@@ -172,15 +172,16 @@ term_scroll_up() {
 
     y=$((y - 1))
 
-    [ $num -gt 1 ] && [ $y2 -ne $(( fin - (num - 1) )) ] && esc CUU "$((num - 1))"
     arg_print "$((y + 1))" "$@"
 
-    case "$(( (y2 + num - 1) / num ))" in
+    case "$y2" in
 	1) [ $num -gt 1 ] && esc CUU "$(( num * 2 - 1 ))"; esc IL "$num" ;;
-	*) esc CUU "$(( num * 2 - 1 ))"; y2=$(( (y2 + num - 1) / num > 1 ? y2 - num : 1 )) ;;
+	*) esc CUU "$((num * 2 - 1))"; y2=$(( (y2 + num - 1) / num > 1 ? y2 - num : 1 )) ;;
     esac
-
     arg_print "$y" "$@"
+
+    # Restore cursor to match y2
+    [ $num -gt 1 ] && esc CUU "$((num - 1))"
     status_line "$#"
 }
 
@@ -193,13 +194,14 @@ term_scroll_down() {
     esac
 
     y=$((y + 1)) pos=$((num * y - (num - 1)))
-    y2=$(( pos < fin ? pos : fin ))
-
-    [ $num -gt 1 ] && esc CUU "$((num - 1))"
+    y2=$(( pos < fin ? pos : fin - (num - 1) ))
 
     arg_print "$((y - 1))" "$@"
     printf '\n'
     arg_print "$y" "$@"
+
+    [ $num -gt 1 ] && esc CUU "$((num - 1))"
+
     status_line "$#"
 }
 
@@ -384,9 +386,9 @@ main() {
             ;;
 	    s?)
 		prompt "Search in Crossref: " r
-		ref_search "$@"
-		    # token=s
-		    # list=$(cat -u /home/huijunchen/Testing/output)
+		# ref_search "$@"
+		    token=s
+		    list=$(cat -u /home/huijunchen/Testing/output)
 		case $? in
 		    2)
 			set -- 'Type something'
@@ -428,7 +430,7 @@ main() {
 		    's') num=6 ;;
 		    ''|'?'|'a') num=1 ;;
 		esac
-		y=$# pos=$((num * y - (num - 1)))
+		y=$# cur=$# pos=$((num * y - (num - 1)))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
 		redraw "$num" "$@"
             ;;
