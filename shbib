@@ -1,12 +1,14 @@
 #!/bin/sh
 
 # Variable explain:
-# y: the current argument
-# pos: the current position on argument y
-# y2: the cursor's final position (invert color using SGR 33 7)
-# num: numbers of lines per argument
-# fin: bottom for printable area, depends on num
-# token: indicator for actions
+# $y: the current argument
+# $pos: the current position on argument y
+# $y2: the final position (invert color using SGR 33 7)
+# $num: numbers of lines per argument
+# $fin: bottom for printable area, depends on num
+# $token: indicator for actions
+# Dimension is adjustable by $top & $bottom
+
 
 # Stolen from shfm
 # Reference: https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_sequences
@@ -34,17 +36,22 @@ esc() {
 }
 
 term_setup() {
+    num=$1; shift
+    # space for status_line
+    bottom=$((LINES - 2))
+    top=3
+    fin=$(( bottom - (bottom - (top - 1)) % num ))
+
     stty=$(stty -g)
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
     esc DECTCEM l
     esc ED2
-    esc DECSTBM 1 "$fin"
+    esc DECSTBM "$top" "$fin"
 }
 
 term_resize() {
-    num=$1; shift
     # false-positive, behavior intentional, globbing is disabled.
     # shellcheck disable=2046
     {
@@ -53,10 +60,6 @@ term_resize() {
     }
 
     LINES=$1 COLUMNS=$2
-
-    # space for status_line
-    bottom=$((LINES - 2))
-    fin=$((bottom - bottom % num))
 }
 
 term_reset() {
@@ -71,19 +74,19 @@ term_reset() {
 redraw() {
     num=$1; shift
     list_print "$num" "$@"
-    status_line "$#"
+    status_line 't'
+    status_line 'b' "$fin"
 }
 
 list_print() {
     num=$1; shift
     esc ED2
-    esc CUP
+    esc CUP "$top"
 
     i=1
-    pos=$((num * y - (num - 1)))
-    end=$((fin + 1))
-    mid=$((fin / 4 < 5 ? 1 : fin / 4))
-
+    pos=$(( num * y - (num - 1) + (top - 1) ))
+    end=$(( fin + 1 - (top - 1) ))
+    mid=$(( end / 4 < 5 ? 1 : end / 4 ))
     case $hist in
         2) # redraw after cmd run
             shift "$((y > y2 ? y - y2 : 0))"
@@ -95,13 +98,13 @@ list_print() {
         ;;
 
         *) # everything else
-	    shift "$((y >= fin / num ? y - fin / num : 0 ))"
+	    shift "$((y >= (end - 1) / num ? y - (end - 1) / num : 0 ))"
         ;;
     esac
 
     for file do
 	case $(( num * i - (num - 1) )) in
-	    "$y2") esc SGR 33 7
+	    "$(( y2 - (top - 1) ))") esc SGR 33 7
 	esac
 
 	case $(( num * i - (num - 1) - end )) in
@@ -144,21 +147,39 @@ arg_format() {
 }
 
 status_line() {
+    caption=$1; shift
     esc DECSC
-    esc CUP "$LINES"
+    case "$caption" in
+	't') esc CUP 1 ;;
+	'b') esc CUP "$LINES" ;;
+    esac
 
     case $USER in
         root) esc SGR 31 7 ;;
-           *) esc SGR 34 7 ;;
+           *)
+	       case "$caption" in
+	           't') esc SGR 36 7 ;;
+		   'b') esc SGR 34 7 ;;
+	       esac
+	       ;;
     esac
 
-    printf '%*s\r%s ' "$COLUMNS" "" "($y/$1)"
+    case "$caption" in
+        't')
+	    printf '%*s\r' "$COLUMNS"
+	    case $msg in
+	        '') printf %s "Reference" ;;
+		*) printf %s "$msg" ;;
+	    esac
+	    ;;
+	'b')
+	    printf '%*s\r%s ' "$COLUMNS" "" "($y/$1)"
 
-    case $ltype in
-        '') printf %s "$BIB_PDF_PATH" ;;
-         *) printf %s "$ltype"
+	    case $ltype in
+		'') printf %s "$BIB_PDF_PATH" ;;
+		*) printf %s "$ltype" ;;
+	    esac
     esac
-
     esc SGR
     esc DECRC
 }
@@ -175,14 +196,15 @@ term_scroll_up() {
     arg_print "$((y + 1))" "$@"
 
     case "$y2" in
-	1) [ $num -gt 1 ] && esc CUU "$(( num * 2 - 1 ))"; esc IL "$num" ;;
-	*) esc CUU "$((num * 2 - 1))"; y2=$(( (y2 + num - 1) / num > 1 ? y2 - num : 1 )) ;;
+	$top) [ $num -gt 1 ] && esc CUU $((num - 1)); esc IL "$num" ;;
+	*) esc CUU "$((num * 2 - 1))"; y2=$(( y2 > top ? y2 - num : top )) ;;
     esac
     arg_print "$y" "$@"
 
     # Restore cursor to match y2
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
-    status_line "$#"
+    status_line 't'
+    status_line 'b' "$#"
 }
 
 
@@ -193,7 +215,7 @@ term_scroll_down() {
 	[0-9]*) return
     esac
 
-    y=$((y + 1)) pos=$((num * y - (num - 1)))
+    y=$((y + 1))  pos=$(( num * y - (num - 1) + (top - 1) ))
     y2=$(( pos < fin ? pos : fin - (num - 1) ))
 
     arg_print "$((y - 1))" "$@"
@@ -202,7 +224,8 @@ term_scroll_down() {
 
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
 
-    status_line "$#"
+    status_line 't'
+    status_line 'b' "$#"
 }
 
 prompt() {
@@ -222,7 +245,7 @@ prompt() {
 
     esc DECRC
     esc DECTCEM l
-    status_line "($y/$#) $PWD"
+    status_line 'b' "($y/$#) $PWD"
 }
 
 cmd_run() {
@@ -254,7 +277,7 @@ ref_search() {
         '') return 2 ;;
 	*)
 	    ltype="Searching..."
-	    status_line "$#"
+	    status_line 'b' "$#"
 	    html="$(curl -s "https://search.crossref.org/?q=$url")"
 	    case "$html" in
 		*'Service Unavailable'*) return 1 ;;
@@ -295,14 +318,14 @@ main() {
     set -- $BIB_PDF_PATH/*.pdf
     cur=$1
 
-    term_resize 1
-    term_setup
+    term_resize
+    term_setup 1
 
     trap 'term_reset'  EXIT INT
     # trap 'term_resize 6; term_setup; y=1 y2=1; redraw 6 "$@"' WINCH
-    trap 'term_resize $num; term_setup; y=1 y2=1; redraw $num "$@"' WINCH
+    trap 'term_resize; term_setup $num; y=1 y2=$top; redraw $num "$@"' WINCH
 
-    y=1 y2=1
+    y=1 y2=$top
     redraw 1 "$@"
 
     while key=$(dd ibs=1 count=1 2>/dev/null); do
@@ -330,7 +353,7 @@ main() {
 				case $? in
 				    0)
 					set -- 'Reference already added; press h to leave'
-					num=1 y=1 y2=1 cur=$1 ltype= token=a
+					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=a
 					redraw $num "$@"
 					;;
 				    *)
@@ -338,14 +361,14 @@ main() {
 					printf '\n' >> "$BIB"
 					printf '\n' >> "$BIB"
 					set -- "Reference added to $BIB; press h to leave"
-					num=1 y=1 y2=1 cur=$1 ltype= token=a
+					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=a
 					redraw $num "$@"
 					;;
 				esac
 				;;
 			    "No")
 				set -- $BIB_PDF_PATH/*.pdf
-				num=1 y=1 y2=1 cur=$1 ltype= token=
+				num=1 y=1 y2=$top cur=$1 ltype= msg= token=
 				redraw $num "$@"
 				;;
 			esac
@@ -355,10 +378,9 @@ main() {
 			doi="${doi%$nl*}"
 			bibtex=$(curl -s "http://api.crossref.org/works/$doi/transform/application/x-bibtex")
 
-			unset token
 			set -- 'Yes' \
 			       'No'
-			num=1 y=1 y2=1 cur=$1 ltype="Copy bibtex to $BIB?"
+			num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=
 			redraw $num "$@"
 
 			esc DECSC
@@ -368,20 +390,18 @@ main() {
 			token='a'
 			;;
 		    '')
-			case "$cur $#" in
-			    "$cur 1") continue ;;
-			    *)
+			[ -e "$cur" ] &&
+			    {
 				cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$cur"
 				redraw 1 "$@"
-				;;
-			esac
+			    }
 			;;
 		    '?') ;;
 		esac
             ;;
             h?|D2|"$bs_char"?) # ARROW LEFT
 		set -- $BIB_PDF_PATH/*.pdf
-		num=1 y=1 y2=1 cur=$1 ltype= token=
+		num=1 y=1 y2=$top cur=$1 ltype= msg= token=
 		redraw $num "$@"
             ;;
 	    s?)
@@ -392,21 +412,21 @@ main() {
 		case $? in
 		    2)
 			set -- 'Type something'
-			num=1 y=1 y2=1 cur=$1 ltype= token=
+			num=1 y=1 y2=$top cur=$1 ltype= msg="Search by text" token=
 			redraw $num "$@"
 			;;
 		    1)
 			set -- 'Fail to connect to Crossref'
-			num=1 y=1 y2=1 cur=$1 ltype= token=
+			num=1 y=1 y2=$top cur=$1 ltype= msg="Search by text" token=
 			redraw $num "$@"
 			;;
 		    0)
 			IFS="|"
 			set -- $list; shift
 			unset IFS
-			num=6 y=1 y2=1 cur=$1 ltype="Result"
-			term_resize $num
-			term_setup
+			num=6 y=1 y2=$top cur=$1 ltype="Result" msg="Search by text"
+			term_resize
+			term_setup $num
 			redraw $num "$@"
 			;;
 		esac
@@ -421,7 +441,7 @@ main() {
 		    's') num=6 ;;
 		    ''|'?'|'a') num=1 ;;
 		esac
-                y=1 y2=1 cur=$1
+                y=1 y2=$top cur=$1
 		redraw "$num" "$@"
             ;;
 
@@ -430,7 +450,7 @@ main() {
 		    's') num=6 ;;
 		    ''|'?'|'a') num=1 ;;
 		esac
-		y=$# cur=$# pos=$((num * y - (num - 1)))
+		y=$# cur=$# pos=$(( num * y - (num - 1) + (top - 1) ))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
 		redraw "$num" "$@"
             ;;
@@ -445,7 +465,7 @@ main() {
                     "$ans*1") set -- 'no results'
                 esac
 
-		num=1 y=1 y2=1 cur=$1 ltype="search $BIB_PDF_PATH/$ans*"
+		num=1 y=1 y2=$top cur=$1 ltype= msg="search $BIB_PDF_PATH/$ans*"
                 redraw $num "$@"
             ;;
             \??)
@@ -460,9 +480,8 @@ main() {
                         '/ - search in $BIB_PDF_PATH/<input>*' \
                         '? - show keybinds'
 
-                y=1 y2=1 cur=$1 ltype=keybinds
+                y=1 y2=$top cur=$1 ltype= msg=keybinds
                 redraw $num "$@"
-                status_line "$#"
             ;;
             q?) exit 0 ;;
 	esac
