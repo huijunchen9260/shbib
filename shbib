@@ -85,7 +85,7 @@ list_print() {
 
     i=1
     pos=$(( num * y - (num - 1) + (top - 1) ))
-    end=$(( fin + 1 - (top - 1) ))
+    end=$(( fin + 1 ))
     mid=$(( end / 4 < 5 ? 1 : end / 4 ))
     case $hist in
         2) # redraw after cmd run
@@ -103,11 +103,13 @@ list_print() {
     esac
 
     for file do
-	case $(( num * i - (num - 1) )) in
-	    "$(( y2 - (top - 1) ))") esc SGR 33 7
+
+	# same formula as $pos
+	case $(( num * i - (num - 1) + (top - 1) )) in
+	    $y2) esc SGR 33 7 ;;
 	esac
 
-	case $(( num * i - (num - 1) - end )) in
+	case $(( num * i - (num - 1) + (top - 1) - end )) in
 	    -*)
 		arg_format "$file"
 		esc CUD
@@ -174,7 +176,6 @@ status_line() {
 	    ;;
 	'b')
 	    printf '%*s\r%s ' "$COLUMNS" "" "($y/$1)"
-
 	    case $ltype in
 		'') printf %s "$BIB_PDF_PATH" ;;
 		*) printf %s "$ltype" ;;
@@ -254,22 +255,23 @@ cmd_run() {
     esc DECSTBM
     esc ED2
     "$@" ||:
-    esc DECSTBM 1 "$((LINES - 2))"
+    esc DECSTBM "$top" "$((LINES - 2))"
     esc DECTCEM l
     stty -icanon -echo
     hist=2
 }
 
 ref_search() {
+    str=$ans
     url=
-    while c=${ans%"${ans#?}"}; do
+    while c=${str%"${str#?}"}; do
 	case $c in
 	    '') break ;;
 	    [[:space:]]) url=$url\+ ;;
 	    *)           url=$url$c ;;
 	esac
 
-	ans=${ans#?}
+	str=${str#?}
     done
 
     case "$url" in
@@ -302,12 +304,31 @@ ref_search() {
 				else if (match(sp[i], /(https:\/\/)?10\.[0-9][0-9][0-9][0-9][0-9.]*\/[^[:space:]]*/))
 				    doi = sp[i]
 			    }
-			    print "|", "Title: " title, "\n\tCategory: " category, "\n\tJournal: " journal, "\n\tYear: " year, "\n\tAuthor: " author, "\n\tDOI: " doi
+			    print "|", "Title: " title, "\n\tCategory: " category, "\n\tJournal: " journal, "\n\tYear: " year, "\n\tAuthor: " author, "\n\tDoi: " doi
 			}')
 		    list=${list#|}
 		    ;;
 	    esac
     esac
+}
+
+restore() {
+    num=1 y=1 y2=$top cur=$1 ltype= msg= token=
+    term_setup $num
+    redraw $num "$@"
+}
+
+yesno() {
+    msg=$1; shift
+    item=$1; shift
+    token_q=$1; shift
+    num=1 y=1 y2=$top cur=$1 ltype= token=q
+    redraw $num "$@"
+
+    esc DECSC
+    esc CUP $((top - 1 + 5))
+    printf %s "$item"
+    esc DECRC
 }
 
 key() {
@@ -326,6 +347,7 @@ key() {
 		    ''|'?'|'q'|'p') num=1 ;;
 		esac
 		term_scroll_down $num "$@"
+		status_line 'b' "$cur"
 		;;
             l?|C2|"$esc") # ARROW RIGHT
 		case "$token" in
@@ -353,33 +375,42 @@ key() {
 				;;
 			    "No")
 				set -- $BIB_PDF_PATH/*.pdf
-				num=1 y=1 y2=$top cur=$1 ltype= msg= token=
-				redraw $num "$@"
+				restore "$@"
+				# num=1 y=1 y2=$top cur=$1 ltype= msg= token=
+				# term_setup $num
+				# redraw $num "$@"
 				;;
 			    *)
 				case "$token_q" in
 				    'p')
 					ans=${cur##*: }
 					ans=${ans##*doi.org/}
+					ans="${ans%$nl*}"
 					case "$ans" in
-					    10\.[0-9][0-9][0-9][0-9]\/[^[:space:]]*) # match doi
+					    10\.[0-9][0-9][0-9][0-9]\/[^[:space:][:cntrl:]]*) # match doi
 						bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
 						set -- 'Yes' \
 						       'No'
-						num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=q token_q=s
-						redraw $num "$@"
+						yesno "Copy bibtex to $BIB?" "$bibtex" 's' "$@"
+						# num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=q token_q=s
+						# redraw $num "$@"
 
-						esc DECSC
-						esc CUP $((top - 1 + 5))
-						printf %s "$bibtex"
-						esc DECRC
+						# esc DECSC
+						# esc CUP $((top - 1 + 5))
+						# printf %s "$bibtex"
+						# esc DECRC
 						;;
 					    *)
 						ref_search "$@"
-						IFS="|"
-						set -- $list; shift
-						unset IFS
-						num=6 y=1 y2=$top cur=$1 ltype="Result" msg="Search by information" token=s
+						case $? in
+						    1) set -- 'Fail to connect to Crossref'; num=1 token= ;;
+						    0)
+							IFS='|'
+							set -- $list; shift
+							unset IFS
+							num=6 y=1 y2=$top cur=$1 ltype="Search: $ans" msg="Search by text" token=s
+							;;
+						esac
 						term_setup $num
 						redraw $num "$@"
 						;;
@@ -390,19 +421,21 @@ key() {
 			esac
 			;;
 		    's')
-			doi=${cur##*DOI: }
-			doi="${doi%$nl*}"
-			bibtex=$(curl -s "http://api.crossref.org/works/$doi/transform/application/x-bibtex")
+			ans=${cur##*: }
+			ans=${ans##*doi.org/}
+			ans="${ans%$nl*}"
+			bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
 
 			set -- 'Yes' \
 			       'No'
-			num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=q token_q=s
-			redraw $num "$@"
+			yesno "Copy bibtex to $BIB?" "$bibtex" 's' "$@"
+			# num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=q token_q=s
+			# redraw $num "$@"
 
-			esc DECSC
-			esc CUP $((top - 1 + 5))
-			printf %s "$bibtex"
-			esc DECRC
+			# esc DECSC
+			# esc CUP $((top - 1 + 5))
+			# printf %s "$bibtex"
+			# esc DECRC
 			;;
 		    'p')
 
@@ -428,35 +461,24 @@ key() {
             ;;
             h?|D2|"$bs_char"?) # ARROW LEFT
 		set -- $BIB_PDF_PATH/*.pdf
-		num=1 y=1 y2=$top cur=$1 ltype= msg= token=
-		term_setup $num
-		redraw $num "$@"
+		restore "$@"
             ;;
 	    s?)
-		token=s
 		prompt "Search in Crossref: " r
-		ref_search "$@"
-		# list=$(cat -u /home/huijunchen/Testing/output)
+		# ref_search "$@"
+		list=$(cat -u /home/huijunchen/Testing/output)
 		case $? in
-		    2)
-			set -- 'Type something'
-			num=1 y=1 y2=$top cur=$1 ltype= msg="Search by text" token=
-			redraw $num "$@"
-			;;
-		    1)
-			set -- 'Fail to connect to Crossref'
-			num=1 y=1 y2=$top cur=$1 ltype= msg="Search by text" token=
-			redraw $num "$@"
-			;;
+		    2) set -- 'type something'; num=1 token= ;;
+		    1) set -- 'fail to connect to crossref'; num=1 token= ;;
 		    0)
-			IFS="|"
+			IFS='|'
 			set -- $list; shift
 			unset IFS
-			num=6 y=1 y2=$top cur=$1 ltype="Result" msg="Search by text"
-			term_setup $num
-			redraw $num "$@"
+			num=6 y=1 y2=$top cur=$1 ltype="search: $ans" msg="search by text" token=s
 			;;
 		esac
+		term_setup $num
+		redraw $num "$@"
 	    ;;
 
 	    p?)
@@ -467,7 +489,7 @@ key() {
 
             g?)
                 case $y in
-                    1) continue
+                    1) continue ;;
                 esac
 
 		case "$token" in
@@ -490,8 +512,6 @@ key() {
             /?)
                 prompt / r
 
-                # word splitting and globbing intentional
-                # shellcheck disable=2086
                 set -- $BIB_PDF_PATH/$ans*.pdf
 
                 case $1$# in
