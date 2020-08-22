@@ -75,7 +75,7 @@ redraw() {
     num=$1; shift
     list_print "$num" "$@"
     status_line 't'
-    status_line 'b' "$fin"
+    status_line 'b' "$#"
 }
 
 list_print() {
@@ -139,8 +139,8 @@ arg_format() {
     esc EL0
     case "$token" in
 	's') printf %s "${1%$nl}" ;;
-	'?'|'a') printf %s "$1" ;;
-        '') printf %s "${1##*/}" ;;
+	'?'|'q') printf %s "$1" ;;
+        ''|'p') printf %s "${1##*/}" ;;
     esac
     esc SGR
     printf '\r'
@@ -261,7 +261,6 @@ cmd_run() {
 }
 
 ref_search() {
-    token=s
     url=
     while c=${ans%"${ans#?}"}; do
 	case $c in
@@ -311,58 +310,44 @@ ref_search() {
     esac
 }
 
-main() {
-    esc_c=$(printf '\033')
-    bs_char=$(printf '\177')
-
-    set -- $BIB_PDF_PATH/*.pdf
-    cur=$1
-
-    term_resize
-    term_setup 1
-
-    trap 'term_reset'  EXIT INT
-    # trap 'term_resize 6; term_setup; y=1 y2=1; redraw 6 "$@"' WINCH
-    trap 'term_resize; term_setup $num; y=1 y2=$top; redraw $num "$@"' WINCH
-
-    y=1 y2=$top
-    redraw 1 "$@"
-
+key() {
     while key=$(dd ibs=1 count=1 2>/dev/null); do
-        case $key${esc:=0} in
-            k?|A2)
+	case $key${esc:=0} in
+	    k?|A2)
 		case "$token" in
 		    's') num=6 ;;
-		    ''|'?'|'a') num=1 ;;
+		    ''|'?'|'q'|'p') num=1 ;;
 		esac
 		term_scroll_up $num "$@"
 		;;
             j?|B2)
 		case "$token" in
 		    's') num=6 ;;
-		    ''|'?'|'a') num=1 ;;
+		    ''|'?'|'q'|'p') num=1 ;;
 		esac
 		term_scroll_down $num "$@"
 		;;
             l?|C2|"$esc") # ARROW RIGHT
 		case "$token" in
-		    'a')
+		    'q')
 			case "$cur" in
 			    "Yes")
-				grep "${bibtex%%$nl*}" "$BIB"
-				case $? in
-				    0)
-					set -- 'Reference already added; press h to leave'
-					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=a
-					redraw $num "$@"
-					;;
-				    *)
-					printf %s "$bibtex" >> "$BIB"
-					printf '\n' >> "$BIB"
-					printf '\n' >> "$BIB"
-					set -- "Reference added to $BIB; press h to leave"
-					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=a
-					redraw $num "$@"
+				case "$token_q" in
+				    's')
+					grep "${bibtex%%$nl*}" "$BIB"
+					case $? in
+					    0)
+						set -- 'Reference already added; press h to leave'
+						num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=
+						redraw $num "$@"
+						;;
+					    *)
+						printf '%s\n\n' "$bibtex" >> "$BIB"
+						set -- "Reference added to $BIB; press h to leave"
+						num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=
+						redraw $num "$@"
+						;;
+					esac
 					;;
 				esac
 				;;
@@ -370,6 +355,37 @@ main() {
 				set -- $BIB_PDF_PATH/*.pdf
 				num=1 y=1 y2=$top cur=$1 ltype= msg= token=
 				redraw $num "$@"
+				;;
+			    *)
+				case "$token_q" in
+				    'p')
+					ans=${cur##*: }
+					ans=${ans##*doi.org/}
+					case "$ans" in
+					    10\.[0-9][0-9][0-9][0-9]\/[^[:space:]]*) # match doi
+						bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
+						set -- 'Yes' \
+						       'No'
+						num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=q token_q=s
+						redraw $num "$@"
+
+						esc DECSC
+						esc CUP $((top - 1 + 5))
+						printf %s "$bibtex"
+						esc DECRC
+						;;
+					    *)
+						ref_search "$@"
+						IFS="|"
+						set -- $list; shift
+						unset IFS
+						num=6 y=1 y2=$top cur=$1 ltype="Result" msg="Search by information" token=s
+						term_setup $num
+						redraw $num "$@"
+						;;
+					esac
+					;;
+				esac
 				;;
 			esac
 			;;
@@ -380,14 +396,25 @@ main() {
 
 			set -- 'Yes' \
 			       'No'
-			num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=
+			num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=q token_q=s
 			redraw $num "$@"
 
 			esc DECSC
-			esc CUP 5
+			esc CUP $((top - 1 + 5))
 			printf %s "$bibtex"
 			esc DECRC
-			token='a'
+			;;
+		    'p')
+
+			case "$(dd if="$1" count=4 bs=1)" in
+			    '%PDF') info=$(exiftool $cur) ;;
+			    *) info='PDF file is broken, or not choosing PDF file; press h to leave' ;;
+			esac
+			IFS="$nl"
+			set -- $info
+			unset IFS
+			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by information in PDF' token=q token_q=p
+			redraw $num "$@"
 			;;
 		    '')
 			[ -e "$cur" ] &&
@@ -402,13 +429,14 @@ main() {
             h?|D2|"$bs_char"?) # ARROW LEFT
 		set -- $BIB_PDF_PATH/*.pdf
 		num=1 y=1 y2=$top cur=$1 ltype= msg= token=
+		term_setup $num
 		redraw $num "$@"
             ;;
 	    s?)
+		token=s
 		prompt "Search in Crossref: " r
-		# ref_search "$@"
-		    token=s
-		    list=$(cat -u /home/huijunchen/Testing/output)
+		ref_search "$@"
+		# list=$(cat -u /home/huijunchen/Testing/output)
 		case $? in
 		    2)
 			set -- 'Type something'
@@ -425,13 +453,18 @@ main() {
 			set -- $list; shift
 			unset IFS
 			num=6 y=1 y2=$top cur=$1 ltype="Result" msg="Search by text"
-			term_resize
 			term_setup $num
 			redraw $num "$@"
 			;;
 		esac
-
 	    ;;
+
+	    p?)
+		set -- $BIB_PDF_PATH/*.pdf
+		num=1 y=1 y2=$top cur=$1 ltype= msg='Search by information in PDF' token=p
+		redraw $num "$@"
+	    ;;
+
             g?)
                 case $y in
                     1) continue
@@ -439,7 +472,7 @@ main() {
 
 		case "$token" in
 		    's') num=6 ;;
-		    ''|'?'|'a') num=1 ;;
+		    ''|'?'|'q'|'p') num=1 ;;
 		esac
                 y=1 y2=$top cur=$1
 		redraw "$num" "$@"
@@ -448,7 +481,7 @@ main() {
             G?)
 		case "$token" in
 		    's') num=6 ;;
-		    ''|'?'|'a') num=1 ;;
+		    ''|'?'|'q'|'p') num=1 ;;
 		esac
 		y=$# cur=$# pos=$(( num * y - (num - 1) + (top - 1) ))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
@@ -476,7 +509,8 @@ main() {
 		        'h - left' \
                         'g - go to top' \
                         'G - go to bottom' \
-			's - search reference on Crossref' \
+			's - search reference on Crossref by text' \
+			'p - search reference on Crossref by PDF file' \
                         '/ - search in $BIB_PDF_PATH/<input>*' \
                         '? - show keybinds'
 
@@ -486,6 +520,25 @@ main() {
             q?) exit 0 ;;
 	esac
     done
+}
+
+main() {
+    esc_c=$(printf '\033')
+    bs_char=$(printf '\177')
+
+    set -- $BIB_PDF_PATH/*.pdf
+    cur=$1
+
+    term_resize
+    term_setup 1
+
+    trap 'term_reset'  EXIT INT
+    trap 'term_resize; term_setup $num; y=1 y2=$top; redraw $num "$@"' WINCH
+
+    y=1 y2=$top
+    redraw 1 "$@"
+
+    key "$@"
 }
 
 nl='
