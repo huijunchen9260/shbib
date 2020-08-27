@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# Dependency: curl, exiftool
+
 # Variable explain:
 # $y: the current argument
 # $pos: the current position on argument y
@@ -46,7 +48,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM l
+    esc DECTCEM h
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -75,6 +77,7 @@ redraw() {
     num=$1; shift
     list_print "$num" "$@"
     status_line 't'
+    # status_line 'b' "$y2"
     status_line 'b' "$#"
 }
 
@@ -84,7 +87,7 @@ list_print() {
     esc CUP "$top"
 
     i=1
-    pos=$(( num * y - (num - 1) + (top - 1) ))
+    pos=$(( num * y - num + top ))
     end=$(( fin + 1 ))
     mid=$(( end / 4 < 5 ? 1 : end / 4 ))
     case $hist in
@@ -98,18 +101,18 @@ list_print() {
         ;;
 
         *) # everything else
-	    shift "$((y >= (end - 1) / num ? y - (end - 1) / num : 0 ))"
+	    shift "$((y >= (end - top) / num ? y - (end - top) / num : 0 ))"
         ;;
     esac
 
     for file do
 
 	# same formula as $pos
-	case $(( num * i - (num - 1) + (top - 1) )) in
+	case $(( num * i - num + top )) in
 	    $y2) esc SGR 33 7 ;;
 	esac
 
-	case $(( num * i - (num - 1) + (top - 1) - end )) in
+	case $(( num * i - num + top - end )) in
 	    -*)
 		arg_format "$file"
 		esc CUD
@@ -140,7 +143,7 @@ arg_print() {
 arg_format() {
     esc EL0
     case "$token" in
-	's') printf %s "${1%$nl}" ;;
+	's'|'r') printf %s "${1%$nl}" ;;
 	'?'|'q') printf %s "$1" ;;
         ''|'p') printf %s "${1##*/}" ;;
     esac
@@ -205,6 +208,7 @@ term_scroll_up() {
     # Restore cursor to match y2
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
     status_line 't'
+    # status_line 'b' "$y2"
     status_line 'b' "$#"
 }
 
@@ -216,8 +220,8 @@ term_scroll_down() {
 	[0-9]*) return
     esac
 
-    y=$((y + 1))  pos=$(( num * y - (num - 1) + (top - 1) ))
-    y2=$(( pos < fin ? pos : fin - (num - 1) ))
+    y=$((y + 1))  pos=$(( num * y - num + top ))
+    y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
 
     arg_print "$((y - 1))" "$@"
     printf '\n'
@@ -226,6 +230,7 @@ term_scroll_down() {
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
 
     status_line 't'
+    # status_line 'b' "$y2"
     status_line 'b' "$#"
 }
 
@@ -262,6 +267,7 @@ cmd_run() {
 }
 
 ref_search() {
+    tmplist= list=
     str=$ans
     url=
     while c=${str%"${str#?}"}; do
@@ -283,33 +289,110 @@ ref_search() {
 	    case "$html" in
 		*'Service Unavailable'*) return 1 ;;
 		*)
-		    TMP="${html##*<table>}"
-		    TMP2="${TMP%%</table>*}"
-		    list=$(printf '%s' "$TMP2" |
-			sed "s/<p class='lead'>/@/g; s/<[^>]*>//g; /^$/ d" |
-			awk 'BEGIN {
-			    RS="@";
-			}
-			{
-			    n=split($0, sp, /\n/)
-			    title = sp[2]
-			    category = sp[3]
-			    for (i=1; i in sp; i++) {
-				if (match(sp[i], /^[0-9][0-9][0-9][0-9]$/))
-				    year = sp[i]
-				else if (match(sp[i], /Authors:.*/))
-				    author = sp[i]
-				else if (match(sp[i-1], /^in$/))
-				    journal = sp[i]
-				else if (match(sp[i], /(https:\/\/)?10\.[0-9][0-9][0-9][0-9][0-9.]*\/[^[:space:]]*/))
-				    doi = sp[i]
-			    }
-			    print "|", "Title: " title, "\n\tCategory: " category, "\n\tJournal: " journal, "\n\tYear: " year, "\n\tAuthor: " author, "\n\tDoi: " doi
-			}')
-		    list=${list#|}
+		    IFS="$nl"
+		    set -- $html
+		    unset IFS
+
+		    for line do
+			case $line in
+			    *Author*)
+				tmp=${line#\<p\ class=\'expand\'\>Authors:\ }
+				tmplist="$tmplist${nl}${tab}Author(s): ${tmp%\<\/p\>}"
+				;;
+			    'published')
+				tmp=${preline#\<b\>}
+				tmplist="$tmplist${nl}${tab}Category: ${tmp%\<\/b\>}"
+				;;
+			    [0-9][0-9][0-9][0-9]) tmplist="$tmplist${nl}${tab}Year: $line";;
+			    https\:\/\/doi.org\/*|https\:\/\/dx.org\/*) tmplist="$tmplist${nl}${tab}Doi: $line" ;;
+			esac
+			case $preline in
+			    'in')
+				tmp=${line#\<b\>}
+				tmplist="$tmplist${nl}${tab}Journal: ${tmp%\<\/b\>}"
+				;;
+			    \<p\ class=\'lead\'\>) tmplist="$tmplist${nl}|$line" ;;
+			esac
+
+			preline="$line"
+		    done
+
+		    # Add \n if some entry does not have 6 lines
+		    IFS='|'
+		    set -- $tmplist; shift
+		    unset IFS
+
+		    # Each item must have totally 6 \n
+		    for line do
+			case $line in
+			    *${nl}*${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line" ;;
+			    *${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}" ;;
+			    *${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}" ;;
+			    *${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}${nl}" ;;
+			    *${nl}*${nl}) list="$list|$line${nl}${nl}${nl}${nl}" ;;
+			    *${nl}) list="$list|$line${nl}${nl}${nl}${nl}${nl}" ;;
+			    *${nl}*${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}" ;; # match last item
+			    *${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}" ;; # match last item
+			    *${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}" ;; # match last item
+			    *${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}${nl}" ;; # match last item
+			    *${nl}*) list="$list|$line${nl}${nl}${nl}${nl}${nl}" ;; # match last item
+			esac
+		    done
 		    ;;
 	    esac
     esac
+}
+
+ref_gen() {
+    tmplist= list=
+    IFS="$nl"
+    set -- $(cat -u $BIB)
+    unset IFS
+    for line do
+	case $line in
+	    @*)
+		tmp="${line##*\{}"
+		tmplist="$tmplist${nl}|BibTeX: ${tmp%,}"
+		;;
+	    *[[:space:]]title*=*)
+		tmp="${line#*\{}"
+		tmplist="$tmplist${nl}${tab}Title: ${tmp%\}*}"
+		;;
+	    *[[:space:]]author*=*)
+		tmp="${line#*\{}"
+		tmplist="$tmplist${nl}${tab}Author(s): ${tmp%\}*}"
+		;;
+	    *[[:space:]]year*)
+		tmp="${line#*=}"
+		tmp="${tmp#\{}"
+		tmp=${tmp%,}
+		tmp=${tmp%\}}
+		tmplist="$tmplist${nl}${tab}Year: $tmp"
+		;;
+	    *[[:space:]]journal*=*)
+		tmp="${line#*\{}"
+		tmplist="$tmplist${nl}${tab}Journal: ${tmp%\}*}"
+		;;
+	esac
+    done
+
+    IFS='|'
+    set -- $tmplist; shift
+    unset IFS
+
+    for line do
+	case $line in
+	    *${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line" ;;
+	    *${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}" ;;
+	    *${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}" ;;
+	    *${nl}*${nl}) list="$list|$line${nl}${nl}${nl}" ;;
+	    *${nl}) list="$list|$line${nl}${nl}${nl}${nl}" ;;
+	    *${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}" ;; # match last item
+	    *${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}" ;; # match last item
+	    *${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}" ;; # match last item
+	    *${nl}*) list="$list|$line${nl}${nl}${nl}${nl}" ;; # match last item
+	esac
+    done
 }
 
 restore() {
@@ -319,9 +402,7 @@ restore() {
 }
 
 yesno() {
-    msg=$1; shift
-    item=$1; shift
-    token_q=$1; shift
+    msg=$1 item=$2 token_q=$3 shift 3
     num=1 y=1 y2=$top cur=$1 ltype= token=q
     redraw $num "$@"
 
@@ -331,24 +412,40 @@ yesno() {
     esc DECRC
 }
 
+filter() {
+    format="$2" IFS="$3"
+    set -- $1
+    for file do
+	eval "$format"; tmp2=${tmp##*$ans}
+	case $(( ${#tmp} - ${#tmp2} )) in
+	    0) shift;;
+	    *) filter="$filter$IFS$tmp" ;;
+	esac
+    done
+    unset IFS
+}
+
 key() {
     while key=$(dd ibs=1 count=1 2>/dev/null); do
 	case $key${esc:=0} in
 	    k?|A2)
 		case "$token" in
 		    's') num=6 ;;
+		    'r') num=5 ;;
 		    ''|'?'|'q'|'p') num=1 ;;
 		esac
 		term_scroll_up $num "$@"
-		;;
+	    ;;
+
             j?|B2)
 		case "$token" in
 		    's') num=6 ;;
+		    'r') num=5 ;;
 		    ''|'?'|'q'|'p') num=1 ;;
 		esac
 		term_scroll_down $num "$@"
-		status_line 'b' "$cur"
-		;;
+	    ;;
+
             l?|C2|"$esc") # ARROW RIGHT
 		case "$token" in
 		    'q')
@@ -376,15 +473,13 @@ key() {
 			    "No")
 				set -- $BIB_PDF_PATH/*.pdf
 				restore "$@"
-				# num=1 y=1 y2=$top cur=$1 ltype= msg= token=
-				# term_setup $num
-				# redraw $num "$@"
 				;;
 			    *)
 				case "$token_q" in
 				    'p')
 					ans=${cur##*: }
 					ans=${ans##*doi.org/}
+					ans=${ans##*dx.org/}
 					ans="${ans%$nl*}"
 					case "$ans" in
 					    10\.[0-9][0-9][0-9][0-9]\/[^[:space:][:cntrl:]]*) # match doi
@@ -392,13 +487,6 @@ key() {
 						set -- 'Yes' \
 						       'No'
 						yesno "Copy bibtex to $BIB?" "$bibtex" 's' "$@"
-						# num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=q token_q=s
-						# redraw $num "$@"
-
-						# esc DECSC
-						# esc CUP $((top - 1 + 5))
-						# printf %s "$bibtex"
-						# esc DECRC
 						;;
 					    *)
 						ref_search "$@"
@@ -423,22 +511,15 @@ key() {
 		    's')
 			ans=${cur##*: }
 			ans=${ans##*doi.org/}
+			ans=${ans##*dx.org/}
 			ans="${ans%$nl*}"
 			bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
 
 			set -- 'Yes' \
 			       'No'
 			yesno "Copy bibtex to $BIB?" "$bibtex" 's' "$@"
-			# num=1 y=1 y2=$top cur=$1 ltype= msg="Copy bibtex to $BIB?" token=q token_q=s
-			# redraw $num "$@"
-
-			# esc DECSC
-			# esc CUP $((top - 1 + 5))
-			# printf %s "$bibtex"
-			# esc DECRC
 			;;
 		    'p')
-
 			case "$(dd if="$1" count=4 bs=1)" in
 			    '%PDF') info=$(exiftool $cur) ;;
 			    *) info='PDF file is broken, or not choosing PDF file; press h to leave' ;;
@@ -446,30 +527,33 @@ key() {
 			IFS="$nl"
 			set -- $info
 			unset IFS
-			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by information in PDF' token=q token_q=p
+			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by which information?' token=q token_q=p
 			redraw $num "$@"
 			;;
 		    '')
 			[ -e "$cur" ] &&
 			    {
 				cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$cur"
+				# cmd_run "evince" "$cur"
 				redraw 1 "$@"
 			    }
 			;;
 		    '?') ;;
 		esac
             ;;
+
             h?|D2|"$bs_char"?) # ARROW LEFT
 		set -- $BIB_PDF_PATH/*.pdf
 		restore "$@"
             ;;
+
 	    s?)
 		prompt "Search in Crossref: " r
-		# ref_search "$@"
-		list=$(cat -u /home/huijunchen/Testing/output)
+		ref_search "$@"
+		# list=$(cat -u /home/huijunchen/Testing/output)
 		case $? in
-		    2) set -- 'type something'; num=1 token= ;;
-		    1) set -- 'fail to connect to crossref'; num=1 token= ;;
+		    2) set -- 'type something'; num=1 cur=$1 ltype="Error!" msg="Error messege: " token= ;;
+		    1) set -- 'fail to connect to crossref'; num=1 cur=$1 ltype="Error!" msg="Error messege: " token= ;;
 		    0)
 			IFS='|'
 			set -- $list; shift
@@ -494,6 +578,7 @@ key() {
 
 		case "$token" in
 		    's') num=6 ;;
+		    'r') num=5 ;;
 		    ''|'?'|'q'|'p') num=1 ;;
 		esac
                 y=1 y2=$top cur=$1
@@ -503,26 +588,64 @@ key() {
             G?)
 		case "$token" in
 		    's') num=6 ;;
+		    'r') num=5 ;;
 		    ''|'?'|'q'|'p') num=1 ;;
 		esac
 		y=$# cur=$# pos=$(( num * y - (num - 1) + (top - 1) ))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
 		redraw "$num" "$@"
             ;;
+
+	    r?)
+		ref_gen "$@"
+
+		IFS='|'
+		set -- $list; shift
+		unset IFS
+		num=5 y=1 y2=$top cur=$1 ltype="Search BibTeX Entry" msg="Choose which BibTeX Entry?" token=r
+		term_setup $num
+		redraw "$num" "$@"
+	    ;;
+
             /?)
                 prompt / r
 
-                set -- $BIB_PDF_PATH/$ans*.pdf
+		case "$token" in
+		    ''|'p')
+			num=1
+			filter "$BIB_PDF_PATH/*.pdf" 'tmp=$file' "$nl"
+			IFS="$nl"
+			set -- $filter
+			unset IFS filter
+			;;
+		    's')
+			num=6
+			filter "$list" 'tmp=${file%$nl}' '|'
+			IFS='|'
+			set -- $filter; shift
+			unset IFS filter
+			;;
+		    'q')
+			case "$token_q" in
+			    'p')
+				num=1
+				filter "$info" 'tmp=$file' "$nl"
+				IFS="$nl"
+				set -- $filter
+				unset IFS filter
+				;;
+			esac
+			;;
+		esac
 
-                case $1$# in
-                    "$ans*1") set -- 'no results'
+                case $# in
+                    0) set -- 'no results'
                 esac
 
-		num=1 y=1 y2=$top cur=$1 ltype= msg="search $BIB_PDF_PATH/$ans*"
+		y=1 y2=$top cur=$1 ltype= msg="filter by *$ans*"
                 redraw $num "$@"
             ;;
             \??)
-		token='?' num=1
                  set -- 'k - up' \
 			'j - down' \
 		        'l - right' \
@@ -533,11 +656,13 @@ key() {
 			'p - search reference on Crossref by PDF file' \
                         '/ - search in $BIB_PDF_PATH/<input>*' \
                         '? - show keybinds'
-
-                y=1 y2=$top cur=$1 ltype= msg=keybinds
+                num=1 y=1 y2=$top cur=$1 ltype= msg=keybinds token='?'
                 redraw $num "$@"
             ;;
             q?) exit 0 ;;
+            "$esc_c"*) esc=1 ;;
+                 '[1') esc=2 ;;
+                    *) esc=0 ;;
 	esac
     done
 }
