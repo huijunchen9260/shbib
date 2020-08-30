@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Dependency: curl, exiftool
+# Dependency: grep, curl, exiftool, xclip/xsel/pbcopy
 
 # Variable explain:
 # $y: the current argument
@@ -34,6 +34,13 @@ esc() {
 
         # xterm (since 1988, supported widely)
 	screen_alt) printf '%s[?1049%s' "$esc_c" "$2" ;; # (h: to; l: back from) alternate buffer
+    esac
+}
+
+get_os() {
+    case $OSTYPE in
+	darwin*) BIB_OPENER=open; clipcopy=pbcopy ;;
+	*) { command -v xclip 1> /dev/null 2>&1 && clipcopy=xclip; } || { command -v xsel 1> /dev/null 2>&1 && clipcopy=xsel; } ;;
     esac
 }
 
@@ -77,7 +84,6 @@ redraw() {
     num=$1; shift
     list_print "$num" "$@"
     status_line 't'
-    # status_line 'b' "$y2"
     status_line 'b' "$#"
 }
 
@@ -140,7 +146,7 @@ arg_print() {
     arg_format "$1"
 }
 
-arg_format() {
+arg_format() { # token
     esc EL0
     case "$token" in
 	's'|'r') printf %s "${1%$nl}" ;;
@@ -338,6 +344,7 @@ ref_search() {
 			    *${nl}*) list="$list|$line${nl}${nl}${nl}${nl}${nl}" ;; # match last item
 			esac
 		    done
+		    list=${list#*|}
 		    ;;
 	    esac
     esac
@@ -393,6 +400,7 @@ ref_gen() {
 	    *${nl}*) list="$list|$line${nl}${nl}${nl}${nl}" ;; # match last item
 	esac
     done
+    list=${list#*|}
 }
 
 restore() {
@@ -415,20 +423,21 @@ yesno() {
 filter() {
     format="$2" IFS="$3"
     set -- $1
-    for file do
+    for line do
 	eval "$format"; tmp2=${tmp##*$ans}
 	case $(( ${#tmp} - ${#tmp2} )) in
-	    0) shift;;
+	    0) shift ;;
 	    *) filter="$filter$IFS$tmp" ;;
 	esac
     done
+    filter=${filter#*$IFS}
     unset IFS
 }
 
 key() {
     while key=$(dd ibs=1 count=1 2>/dev/null); do
 	case $key${esc:=0} in
-	    k?|A2)
+	    k?|A2) # token
 		case "$token" in
 		    's') num=6 ;;
 		    'r') num=5 ;;
@@ -437,7 +446,7 @@ key() {
 		term_scroll_up $num "$@"
 	    ;;
 
-            j?|B2)
+            j?|B2) # token
 		case "$token" in
 		    's') num=6 ;;
 		    'r') num=5 ;;
@@ -446,7 +455,7 @@ key() {
 		term_scroll_down $num "$@"
 	    ;;
 
-            l?|C2|"$esc") # ARROW RIGHT
+            l?|C2|"$esc") # ARROW RIGHT # token
 		case "$token" in
 		    'q')
 			case "$cur" in
@@ -477,10 +486,9 @@ key() {
 			    *)
 				case "$token_q" in
 				    'p')
-					ans=${cur##*: }
+					ans=${cur##* : }
 					ans=${ans##*doi.org/}
-					ans=${ans##*dx.org/}
-					ans="${ans%$nl*}"
+					ans="${ans%%$nl*}"
 					case "$ans" in
 					    10\.[0-9][0-9][0-9][0-9]\/[^[:space:][:cntrl:]]*) # match doi
 						bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
@@ -494,7 +502,7 @@ key() {
 						    1) set -- 'Fail to connect to Crossref'; num=1 token= ;;
 						    0)
 							IFS='|'
-							set -- $list; shift
+							set -- $list
 							unset IFS
 							num=6 y=1 y2=$top cur=$1 ltype="Search: $ans" msg="Search by text" token=s
 							;;
@@ -509,15 +517,36 @@ key() {
 			esac
 			;;
 		    's')
-			ans=${cur##*: }
-			ans=${ans##*doi.org/}
-			ans=${ans##*dx.org/}
-			ans="${ans%$nl*}"
-			bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
+			case $cur in
+			    "$gscholar")
+				cmd_run "${BIB_OPENER:=xdg-open}" "https://scholar.google.com/scholar?&q=$ans"
+				set -- 'Search google scholar in browser; copy bibtex for the paper you want.'
+				num=1 y=1 y2=$top cur=$1 ltype= msg="Google Scholar Search" token=
+				redraw 1 "$@"
+				;;
+			    *)
+				ans=${cur##*: }
+				ans=${ans##*doi.org/}
+				ans="${ans%%$nl*}"
+				bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
 
-			set -- 'Yes' \
-			       'No'
-			yesno "Copy bibtex to $BIB?" "$bibtex" 's' "$@"
+				set -- 'Yes' \
+				       'No'
+				yesno "Copy bibtex to $BIB?" "$bibtex" 's' "$@"
+				;;
+			esac
+			;;
+		    'r')
+			ans=${cur%%$nl*}
+			ans=${ans##*BibTeX: }
+			case "$clipcopy" in
+			    "pbcopy") printf '%s' "$ans" | pbcopy ;;
+			    "xclip") printf '%s' "$ans" | xclip -selection clipboard ;;
+			    "xsel") printf '%s' "$ans" | xsel --clipboard ;;
+			esac
+			set -- "$ans has copied to clipboard using $clipcopy; press h to leave"
+			num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=
+			redraw $num "$@"
 			;;
 		    'p')
 			case "$(dd if="$1" count=4 bs=1)" in
@@ -534,7 +563,6 @@ key() {
 			[ -e "$cur" ] &&
 			    {
 				cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$cur"
-				# cmd_run "evince" "$cur"
 				redraw 1 "$@"
 			    }
 			;;
@@ -548,6 +576,7 @@ key() {
             ;;
 
 	    s?)
+		gscholar="There is no matching...\\(ㄒoㄒ)/${nl}${tab}Search in Google Scholar!${nl}${nl}${nl}${nl}${nl}"
 		prompt "Search in Crossref: " r
 		ref_search "$@"
 		# list=$(cat -u /home/huijunchen/Testing/output)
@@ -556,7 +585,8 @@ key() {
 		    1) set -- 'fail to connect to crossref'; num=1 cur=$1 ltype="Error!" msg="Error messege: " token= ;;
 		    0)
 			IFS='|'
-			set -- $list; shift
+			set -- $list \
+			       "$gscholar"
 			unset IFS
 			num=6 y=1 y2=$top cur=$1 ltype="search: $ans" msg="search by text" token=s
 			;;
@@ -571,7 +601,18 @@ key() {
 		redraw $num "$@"
 	    ;;
 
-            g?)
+	    r?)
+		ref_gen "$@"
+
+		IFS='|'
+		set -- $list
+		unset IFS
+		num=5 y=1 y2=$top cur=$1 ltype="Search BibTeX Entry" msg="Choose which BibTeX Entry?" token=r
+		term_setup $num
+		redraw "$num" "$@"
+	    ;;
+
+            g?) # token
                 case $y in
                     1) continue ;;
                 esac
@@ -585,51 +626,44 @@ key() {
 		redraw "$num" "$@"
             ;;
 
-            G?)
+            G?) # token
 		case "$token" in
 		    's') num=6 ;;
 		    'r') num=5 ;;
 		    ''|'?'|'q'|'p') num=1 ;;
 		esac
-		y=$# cur=$# pos=$(( num * y - (num - 1) + (top - 1) ))
+		y=$# pos=$(( num * y - (num - 1) + (top - 1) ))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
+		cur=$($#)
 		redraw "$num" "$@"
             ;;
 
-	    r?)
-		ref_gen "$@"
-
-		IFS='|'
-		set -- $list; shift
-		unset IFS
-		num=5 y=1 y2=$top cur=$1 ltype="Search BibTeX Entry" msg="Choose which BibTeX Entry?" token=r
-		term_setup $num
-		redraw "$num" "$@"
-	    ;;
-
-            /?)
+            /?) # token
                 prompt / r
 
 		case "$token" in
 		    ''|'p')
 			num=1
-			filter "$BIB_PDF_PATH/*.pdf" 'tmp=$file' "$nl"
+			filter "$BIB_PDF_PATH/*.pdf" 'tmp=$line' "$nl"
 			IFS="$nl"
 			set -- $filter
 			unset IFS filter
 			;;
-		    's')
-			num=6
-			filter "$list" 'tmp=${file%$nl}' '|'
+		    's'|'r')
+			case "$token" in
+			    's') num=6 ;;
+			    'r') num=5 ;;
+			esac
+			filter "$list" 'tmp=${line%$nl}' '|'
 			IFS='|'
-			set -- $filter; shift
+			set -- $filter
 			unset IFS filter
 			;;
 		    'q')
 			case "$token_q" in
 			    'p')
 				num=1
-				filter "$info" 'tmp=$file' "$nl"
+				filter "$info" 'tmp=$line' "$nl"
 				IFS="$nl"
 				set -- $filter
 				unset IFS filter
@@ -639,7 +673,10 @@ key() {
 		esac
 
                 case $# in
-                    0) set -- 'no results'
+                    0)
+			num=1
+			set -- 'no result'
+			;;
                 esac
 
 		y=1 y2=$top cur=$1 ltype= msg="filter by *$ans*"
@@ -654,6 +691,7 @@ key() {
                         'G - go to bottom' \
 			's - search reference on Crossref by text' \
 			'p - search reference on Crossref by PDF file' \
+			'r - copy BibTeX entry from yoru $BIB' \
                         '/ - search in $BIB_PDF_PATH/<input>*' \
                         '? - show keybinds'
                 num=1 y=1 y2=$top cur=$1 ltype= msg=keybinds token='?'
@@ -683,6 +721,7 @@ main() {
     y=1 y2=$top
     redraw 1 "$@"
 
+    get_os
     key "$@"
 }
 
