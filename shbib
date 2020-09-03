@@ -435,21 +435,22 @@ filter() {
 }
 
 waitclip() {
-    case "$clipcopy" in
-	"pbcopy") clipcmd="pbcopy" ;;
-	"xclip") clipcmd="xclip -selection clipboard"; printf '%s' "" | xclip -selection clipboard ;;
-	"xsel") clipcmd="xsel --clipboard"; xsel -bc ;;
-    esac
-    count=1 countlimit=3600
-    while :; do
-	set -- "Copy BibTeX within $countlimit second; Already $count second past. Press h to cancel"
-	num=1 y=1 y2=$top cur=$1 ltype= msg="Google Scholar Search" token=
+    # case "$clipcopy" in
+	# "pbcopy") clipcmd="pbcopy" ;;
+	# "xclip") clipcmd="xclip -selection clipboard"; printf '%s' "" | xclip -selection clipboard ;;
+	# "xsel") clipcmd="xsel --clipboard"; xsel -bc ;;
+    # esac
+	# case $clip in
+	#     '') continue ;;
+	#     *) break ;;
+	# esac
+
+    count=1 countlimit=30
+    while [ $count -le $countlimit ]; do
+	set -- "Copy BibTeX within $countlimit second; Already $count second past, echo $keypress. Press h to cancel"
+	num=1 y=1 y2=$top cur=$1 ltype= msg="Google Scholar Search"
 	redraw 1 "$@"
-	clip="$(printf '%s' "$clipcmd" | ${SHELL:-"/bin/sh"})"
 	count=$((count + 1))
-	case $count in
-	    $countlimit) break ;;
-	esac
 	case $key${esc:=0} in
 	    h?|D2|"$bs_char"?) break ;;
 	    "$esc_c"*) esc=1 ;;
@@ -457,12 +458,7 @@ waitclip() {
 	    *) esc=0 ;;
 	esac
 	sleep 1
-	case $clip in
-	    '') continue ;;
-	    *) break ;;
-	esac
     done
-    unset count
 }
 
 key() {
@@ -497,20 +493,20 @@ key() {
 					case $? in
 					    0)
 						set -- 'Reference already added; press h to leave'
-						num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=
+						num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
 						redraw $num "$@"
 						;;
 					    *)
 						printf '%s\n\n' "$bibtex" >> "$BIB"
 						set -- "Reference added to $BIB; press h to leave"
-						num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=
+						num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
 						redraw $num "$@"
 						;;
 					esac
 					;;
 				    'sg')
-					cmd_run "${BIB_OPENER:=xdg-open}" "https://scholar.google.com/scholar?&q=$ans"
-					waitclip
+					# cmd_run "${BIB_OPENER:=xdg-open}" "https://scholar.google.com/scholar?&q=$ans"
+					waitclip "$@"
 					;;
 				esac
 				;;
@@ -554,8 +550,8 @@ key() {
 		    's')
 			case $cur in
 			    "$gscholar")
-				cmd_run "${BIB_OPENER:=xdg-open}" "https://scholar.google.com/scholar?&q=$ans"
-				waitclip
+				# cmd_run "${BIB_OPENER:=xdg-open}" "https://scholar.google.com/scholar?&q=$ans"
+				waitclip "$@"
 				;;
 			    *)
 				ans=${cur##*: }
@@ -691,7 +687,7 @@ key() {
 			    's') num=6 ;;
 			    'r') num=5 ;;
 			esac
-			filter "$list" 'tmp=${line%$nl}' '|'
+			filter "$list" 'tmp=$line' '|'
 			IFS='|'
 			set -- $filter
 			unset IFS filter
