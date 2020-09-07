@@ -55,7 +55,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM h
+    esc DECTCEM l
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -149,9 +149,15 @@ arg_print() {
 arg_format() { # token
     esc EL0
     case "$token" in
-	's'|'r') printf %s "${1%$nl}" ;;
-	'?'|'q') printf %s "$1" ;;
-        ''|'p') printf %s "${1##*/}" ;;
+	's'|'c'|'o') printf %s "${1%$nl}" ;;
+	'?') printf %s "$1" ;;
+        ''|'p'|'b'|'B') printf %s "${1##*/}" ;;
+	'q')
+	    case "$token_q" in
+	        ''|'p'|'sc'|'sg') printf %s "$1" ;;
+		'b'|'B') printf %s "${1%$nl}" ;;
+	    esac
+	    ;;
     esac
     esc SGR
     printf '\r'
@@ -380,6 +386,9 @@ ref_gen() {
 		tmp="${line#*\{}"
 		tmplist="$tmplist${nl}${tab}Journal: ${tmp%\}*}"
 		;;
+	    *[[:space:]]doi*=*)
+		tmp="${line#*\{}"
+		tmplist="$tmplist${nl}${tab}Doi: ${tmp%\}*}"
 	esac
     done
 
@@ -389,18 +398,36 @@ ref_gen() {
 
     for line do
 	case $line in
-	    *${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line" ;;
-	    *${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}" ;;
-	    *${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}" ;;
-	    *${nl}*${nl}) list="$list|$line${nl}${nl}${nl}" ;;
-	    *${nl}) list="$list|$line${nl}${nl}${nl}${nl}" ;;
-	    *${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}" ;; # match last item
-	    *${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}" ;; # match last item
-	    *${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}" ;; # match last item
-	    *${nl}*) list="$list|$line${nl}${nl}${nl}${nl}" ;; # match last item
+	    *${nl}*${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line" ;;
+	    *${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}" ;;
+	    *${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}" ;;
+	    *${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}${nl}" ;;
+	    *${nl}*${nl}) list="$list|$line${nl}${nl}${nl}${nl}" ;;
+	    *${nl}) list="$list|$line${nl}${nl}${nl}${nl}${nl}" ;;
+	    *${nl}*${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}" ;; # match last item
+	    *${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}" ;; # match last item
+	    *${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}" ;; # match last item
+	    *${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}${nl}" ;; # match last item
+	    *${nl}*) list="$list|$line${nl}${nl}${nl}${nl}${nl}" ;; # match last item
 	esac
     done
     list=${list#*|}
+}
+
+entry_gen() {
+    IFS="$nl"
+    set -- $cur
+    unset IFS
+    for line do
+	case $line in
+	    BibTeX*) label="${line#*: }" ;;
+	    *[[:space:]]Title*) title="${line#*: }" ;;
+	    *[[:space:]]Author*) author="${line#*: }" ;;
+	    *[[:space:]]Year*) year="${line#*: }" ;;
+	    *[[:space:]]Journal*) journal="${line#*: }" ;;
+	    *[[:space:]]Doi*) doi="${line#*: }" ;;
+	esac
+    done
 }
 
 restore() {
@@ -435,29 +462,19 @@ filter() {
 }
 
 waitclip() {
-    # case "$clipcopy" in
-	# "pbcopy") clipcmd="pbcopy" ;;
-	# "xclip") clipcmd="xclip -selection clipboard"; printf '%s' "" | xclip -selection clipboard ;;
-	# "xsel") clipcmd="xsel --clipboard"; xsel -bc ;;
-    # esac
-	# case $clip in
-	#     '') continue ;;
-	#     *) break ;;
-	# esac
-
-    count=1 countlimit=30
-    while [ $count -le $countlimit ]; do
-	set -- "Copy BibTeX within $countlimit second; Already $count second past, echo $keypress. Press h to cancel"
-	num=1 y=1 y2=$top cur=$1 ltype= msg="Google Scholar Search"
+    unset bibtex clipcmd
+    case "$clipcopy" in
+	"pbcopy") clipcmd='pbpaste' ;;
+	"xclip") clipcmd='xclip -o -selection clipboard'; printf '%s' "" | xclip -selection clipboard ;;
+	"xsel") clipcmd='xsel -o --clipboard'; xsel -bc ;;
+    esac
+    count=1 countlimit=3600
+    while [ -z "$bibtex" ] && [ $count -le $countlimit ]; do
+	set -- "Copy BibTeX within $countlimit second; Already $count second past"
+	num=1 y=1 y2=$top cur=$1 ltype="Copy BibTeX!" msg="Google Scholar Search"
 	redraw 1 "$@"
-	count=$((count + 1))
-	case $key${esc:=0} in
-	    h?|D2|"$bs_char"?) break ;;
-	    "$esc_c"*) esc=1 ;;
-	    '[1') esc=2 ;;
-	    *) esc=0 ;;
-	esac
-	sleep 1
+	bibtex="$($clipcmd)"
+	sleep 1; count=$((count + 1))
     done
 }
 
@@ -466,18 +483,26 @@ key() {
 	case $key${esc:=0} in
 	    k?|A2) # token
 		case "$token" in
-		    's') num=6 ;;
-		    'r') num=5 ;;
-		    ''|'?'|'q'|'p') num=1 ;;
+		    's'|'c'|'o') num=6 ;;
+		    ''|'?'|'p'|'b'|'B') num=1 ;;
+		    'q')
+			case "$token_q" in
+			    ''|'p'|'sc'|'sg') num=1 ;;
+			    'b') num=6 ;;
+			esac
 		esac
 		term_scroll_up $num "$@"
 	    ;;
 
             j?|B2) # token
 		case "$token" in
-		    's') num=6 ;;
-		    'r') num=5 ;;
-		    ''|'?'|'q'|'p') num=1 ;;
+		    's'|'c'|'o') num=6 ;;
+		    ''|'?'|'p'|'b'|'B') num=1 ;;
+		    'q')
+			case "$token_q" in
+			    ''|'p'|'sc'|'sg') num=1 ;;
+			    'b') num=6 ;;
+			esac
 		esac
 		term_scroll_down $num "$@"
 	    ;;
@@ -489,7 +514,7 @@ key() {
 			    "Yes")
 				case "$token_q" in
 				    'sc')
-					grep "${bibtex%%$nl*}" "$BIB"
+					grep -q "${bibtex%%$nl*}" "$BIB"
 					case $? in
 					    0)
 						set -- 'Reference already added; press h to leave'
@@ -497,16 +522,27 @@ key() {
 						redraw $num "$@"
 						;;
 					    *)
-						printf '%s\n\n' "$bibtex" >> "$BIB"
-						set -- "Reference added to $BIB; press h to leave"
-						num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
-						redraw $num "$@"
+						case "${bibtex%%$nl*}" in
+						    @[[:alpha:]]*[[:alnum:]_],)
+							printf '%s\n\n' "$bibtex" >> "$BIB"
+							set -- "Reference added to $BIB; press h to leave"
+							num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
+							redraw $num "$@"
+							;;
+						    *)
+							set -- 'Not copying BibTeX; press h to leave'
+							num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
+							redraw $num "$@"
+						esac
 						;;
 					esac
 					;;
 				    'sg')
-					# cmd_run "${BIB_OPENER:=xdg-open}" "https://scholar.google.com/scholar?&q=$ans"
+					cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
 					waitclip "$@"
+					set -- 'Yes' \
+					       'No'
+					yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
 					;;
 				esac
 				;;
@@ -528,12 +564,18 @@ key() {
 						yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
 						;;
 					    *)
+						gscholar="There is no matching...\\(ㄒoㄒ)/${nl}${tab}Search in Google Scholar!${nl}${nl}${nl}${nl}${nl}"
 						ref_search "$@"
 						case $? in
-						    1) set -- 'Fail to connect to Crossref'; num=1 token= ;;
+						    1)
+							set -- 'Yes' \
+							      'No'
+							yesno "Fail to connect Crossref. Search in Google scholar?" "" 'sg' "$@"
+							;;
 						    0)
 							IFS='|'
-							set -- $list
+							set -- $list \
+							       $gscholar
 							unset IFS
 							num=6 y=1 y2=$top cur=$1 ltype="Search: $ans" msg="Search by text" token=s
 							;;
@@ -543,6 +585,35 @@ key() {
 						;;
 					esac
 					;;
+				    'b')
+					entry_gen "$@"
+					# Write journal to Description only if Description not exist
+					exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
+					exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
+					case $? in
+					    0) set -- "Successfully update database; press h to leave" ;;
+					    *) set -- "Fail to update database; press h to leave" ;;
+					esac
+					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
+					redraw $num "$@"
+					;;
+				    'B')
+					while [ -n $faillist ]; do
+					    entry_gen "$@"
+					    exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
+					    exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
+					    case $? in
+						0) msg="Successfully update database!" ;;
+						*) msg="Fail to update database ㄒoㄒ" ;;
+					    esac
+					    faillist="${faillist#*"$filename"}${nl}${faillist%%"$filename"*}"
+					    IFS="$nl"
+					    set -- $faillist
+					    unset IFS
+					    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" token=B
+					    redraw $num "$@"
+					done
+					;;
 				esac
 				;;
 			esac
@@ -550,8 +621,11 @@ key() {
 		    's')
 			case $cur in
 			    "$gscholar")
-				# cmd_run "${BIB_OPENER:=xdg-open}" "https://scholar.google.com/scholar?&q=$ans"
+				cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
 				waitclip "$@"
+				set -- 'Yes' \
+				       'No'
+				yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
 				;;
 			    *)
 				ans=${cur##*: }
@@ -565,7 +639,7 @@ key() {
 				;;
 			esac
 			;;
-		    'r')
+		    'c')
 			ans=${cur%%$nl*}
 			ans=${ans##*BibTeX: }
 			case "$clipcopy" in
@@ -577,9 +651,24 @@ key() {
 			num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=
 			redraw $num "$@"
 			;;
+		    'o')
+			ans=${cur%%$nl*}
+			ans=${ans##*BibTeX: }
+			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$ans.pdf"
+
+			ref_gen "$@"
+
+			IFS='|'
+			set -- $list
+			unset IFS
+			num=6 y=1 y2=$top cur=$1 ltype="Open PDF file by $BIB" msg="Open PDF file by BibTeX entry" token=o
+			term_setup $num
+			redraw "$num" "$@"
+			;;
 		    'p')
-			case "$(dd if="$1" count=4 bs=1)" in
-			    '%PDF') info=$(exiftool $cur) ;;
+			read -r type < "$cur"
+			case "$type" in
+			    '%PDF'*) info=$(exiftool $cur) ;;
 			    *) info='PDF file is broken, or not choosing PDF file; press h to leave' ;;
 			esac
 			IFS="$nl"
@@ -587,6 +676,22 @@ key() {
 			unset IFS
 			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by which information?' token=q token_q=p
 			redraw $num "$@"
+			;;
+		    'b'|'B')
+			filename=$cur
+			unset cur
+			ref_gen "$@"
+
+			IFS='|'
+			set -- $list
+			unset IFS
+			case $token in
+			    'b') token_q=b ;;
+			    'B') token_q=B ;;
+			esac
+			num=6 y=1 y2=$top cur=$1 ltype="Build database" msg="Choose which BibTeX entry?" token=q
+			term_setup $num
+			redraw "$num" "$@"
 			;;
 		    '')
 			[ -e "$cur" ] &&
@@ -608,7 +713,6 @@ key() {
 		gscholar="There is no matching...\\(ㄒoㄒ)/${nl}${tab}Search in Google Scholar!${nl}${nl}${nl}${nl}${nl}"
 		prompt "Search in Crossref: " r
 		ref_search "$@"
-		# list=$(cat -u /home/huijunchen/Testing/output)
 		case $? in
 		    2) set -- 'type something'; num=1 cur=$1 ltype="Error!" msg="Error messege: " token= ;;
 		    1)
@@ -634,15 +738,79 @@ key() {
 		redraw $num "$@"
 	    ;;
 
-	    r?)
+	    o?)
 		ref_gen "$@"
 
 		IFS='|'
 		set -- $list
 		unset IFS
-		num=5 y=1 y2=$top cur=$1 ltype="Search BibTeX Entry" msg="Choose which BibTeX Entry?" token=r
+		num=6 y=1 y2=$top cur=$1 ltype="Open PDF file by $BIB" msg="Open PDF file by BibTeX entry" token=o
 		term_setup $num
 		redraw "$num" "$@"
+	    ;;
+
+	    c?)
+		ref_gen "$@"
+
+		IFS='|'
+		set -- $list
+		unset IFS
+		num=6 y=1 y2=$top cur=$1 ltype="Copy BibTeX label" msg="Choose which BibTeX label?" token=c
+		term_setup $num
+		redraw "$num" "$@"
+	    ;;
+
+	    b?)
+		set -- $BIB_PDF_PATH/*.pdf
+		num=1 y=1 y2=$top cur=$1 ltype= msg='Choose PDF file to build database: ' token=b
+		redraw $num "$@"
+	    ;;
+
+	    B?)
+		set -- $BIB_PDF_PATH/*.pdf
+		for pdf do
+		    read -r type < "$pdf"
+		    case "$type" in
+		        '%PDF'*)
+			    TMP="${pdf##*/}"; basename="${TMP%.*}"
+			    grep -q "$basename" "$BIB"
+			    case $? in
+			        0) continue ;;
+				*)
+				    info=$(exiftool $pdf)
+				    tmp=${info##*Title                           : }
+				    title=${tmp%%$nl*}; ans=$title
+				    filter "$(cat -u $BIB)" 'tmp=$line' '@'
+				    unset IFS
+				    case $filter in
+				        '') faillist="$faillist${nl}$pdf" ;;
+					*)
+					    IFS="$nl"
+					    set -- $filter
+					    unset IFS
+					    for line do
+						case $line in
+						    @*) tmp="${line#*\{}"; label="${tmp%,}" ;;
+						    *[[:space:]]title*=*) tmp="${line#*\{}"; title="${tmp%\}*}" ;;
+						    *[[:space:]]author*=*) tmp="${line#*\{}"; author="${tmp%\}*}" ;;
+						    *[[:space:]]journal*=*) tmp="${line#*\{}"; journal="${tmp%\}*}" ;;
+						    *[[:space:]]doi*=*) tmp="${line#*\{}"; doi="${tmp%\}*}" ;;
+						esac
+					    done
+					    exiftool -wm cg -Description="$journal" "$pdf" -overwrite_original 1>/dev/null
+					    exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$pdf" -overwrite_original 1>/dev/null
+					    ;;
+				    esac
+				    ;;
+			    esac
+			    ;;
+		    esac
+		done
+		IFS="$nl"
+		set -- $faillist
+		unset IFS
+		num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Choose pdf to manually update metadata: " token=B
+                redraw $num "$@"
 	    ;;
 
             g?) # token
@@ -651,9 +819,13 @@ key() {
                 esac
 
 		case "$token" in
-		    's') num=6 ;;
-		    'r') num=5 ;;
-		    ''|'?'|'q'|'p') num=1 ;;
+		    's'|'c'|'o') num=6 ;;
+		    ''|'?'|'p'|'b'|'B') num=1 ;;
+		    'q')
+			case "$token_q" in
+			    ''|'p'|'sc'|'sg') num=1 ;;
+			    'b') num=6 ;;
+			esac
 		esac
                 y=1 y2=$top cur=$1
 		redraw "$num" "$@"
@@ -661,13 +833,17 @@ key() {
 
             G?) # token
 		case "$token" in
-		    's') num=6 ;;
-		    'r') num=5 ;;
-		    ''|'?'|'q'|'p') num=1 ;;
+		    's'|'c'|'o') num=6 ;;
+		    ''|'?'|'p'|'b'|'B') num=1 ;;
+		    'q')
+			case "$token_q" in
+			    ''|'p'|'sc'|'sg') num=1 ;;
+			    'b') num=6 ;;
+			esac
+			;;
 		esac
 		y=$# pos=$(( num * y - (num - 1) + (top - 1) ))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
-		cur=$($#)
 		redraw "$num" "$@"
             ;;
 
@@ -675,18 +851,14 @@ key() {
                 prompt / r
 
 		case "$token" in
-		    ''|'p')
+		    ''|'p'|'b'|'B')
 			num=1
 			filter "$BIB_PDF_PATH/*.pdf" 'tmp=$line' "$nl"
 			IFS="$nl"
 			set -- $filter
 			unset IFS filter
 			;;
-		    's'|'r')
-			case "$token" in
-			    's') num=6 ;;
-			    'r') num=5 ;;
-			esac
+		    's'|'c'|'o')
 			filter "$list" 'tmp=$line' '|'
 			IFS='|'
 			set -- $filter
@@ -694,7 +866,7 @@ key() {
 			;;
 		    'q')
 			case "$token_q" in
-			    'p')
+			    'p'|'sc'|'sg'|'b')
 				num=1
 				filter "$info" 'tmp=$line' "$nl"
 				IFS="$nl"
@@ -715,21 +887,26 @@ key() {
 		y=1 y2=$top cur=$1 ltype= msg="filter by *$ans*"
                 redraw $num "$@"
             ;;
+
             \??)
-                 set -- 'k - up' \
-			'j - down' \
-		        'l - right' \
-		        'h - left' \
+                 set -- 'k/↑ - up' \
+			'j/↓ - down' \
+		        'l/→ - right' \
+		        'h/← - left' \
                         'g - go to top' \
                         'G - go to bottom' \
-			's - search reference on Crossref by text' \
-			'p - search reference on Crossref by PDF file' \
-			'r - copy BibTeX entry from yoru $BIB' \
+			's - search online by text' \
+			'p - search online by metadata in PDF file' \
+			'c - copy BibTeX entry from your $BIB' \
+			'o - Open PDF file by BibTeX entry' \
+			'b - manually build database by rename and encode metadata into PDF file' \
+			'B - automatically build database by rename and encode metadata into PDF file' \
                         '/ - search in $BIB_PDF_PATH/<input>*' \
                         '? - show keybinds'
                 num=1 y=1 y2=$top cur=$1 ltype= msg=keybinds token='?'
                 redraw $num "$@"
             ;;
+
             q?) exit 0 ;;
             "$esc_c"*) esc=1 ;;
                  '[1') esc=2 ;;

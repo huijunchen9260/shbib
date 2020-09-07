@@ -28,16 +28,19 @@ To run `shbib`, you just need open your terminal, type `git clone https://github
 Type `?` to get the following keybinding:
 
 ```
-k - up
-j - down
-l - right
-h - left
+k/↑ - up
+j/↓ - down
+l/→ - right
+h/← - left
 g - go to top
 G - go to bottom
-s - search reference on Crossref by text
-p - search reference on Crossref by PDF file
-r - copy BibTeX entry from yoru $BIB
-/ - search in $BIB_PDF_PATH/ans/*
+s - search online by text
+p - search online by metadata in PDF file
+c - copy BibTeX entry from your $BIB
+o - Open PDF file by BibTeX entry
+b - manually build database by rename and encode metadata into PDF file
+B - automatically build database by rename and encode metadata into PDF file
+/ - search in $BIB_PDF_PATH/<input>*
 ? - show keybinds
 ```
 
