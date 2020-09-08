@@ -5,7 +5,7 @@
 # Variable explain:
 # $y: the current argument
 # $pos: the current position on argument y
-# $y2: the final position (invert color using SGR 33 7)
+# $y2: the current position on current screen position (invert color using SGR 33 7)
 # $num: numbers of lines per argument
 # $fin: bottom for printable area, depends on num
 # $token: indicator for actions
@@ -55,7 +55,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM l
+    esc DECTCEM h
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -85,6 +85,7 @@ redraw() {
     list_print "$num" "$@"
     status_line 't'
     status_line 'b' "$#"
+    # status_line 'b' "$y2 $pos $num $top $fin"
 }
 
 list_print() {
@@ -96,9 +97,10 @@ list_print() {
     pos=$(( num * y - num + top ))
     end=$(( fin + 1 ))
     mid=$(( end / 4 < 5 ? 1 : end / 4 ))
+
     case $hist in
         2) # redraw after cmd run
-            shift "$((y > y2 ? y - y2 : 0))"
+	    shift "$((pos >= y2 ? (pos - y2) / num : 0))"
         ;;
 
         1) # redraw after go-to-parent
@@ -207,7 +209,7 @@ term_scroll_up() {
         -*|0|1) return ;;
     esac
 
-    y=$((y - 1))
+    y=$((y - 1)) pos=$(( num * y - num + top ))
 
     arg_print "$((y + 1))" "$@"
 
@@ -220,7 +222,7 @@ term_scroll_up() {
     # Restore cursor to match y2
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
     status_line 't'
-    # status_line 'b' "$y2"
+    # status_line 'b' "$y2 $pos $num $top $fin"
     status_line 'b' "$#"
 }
 
@@ -233,7 +235,8 @@ term_scroll_down() {
     esac
 
     y=$((y + 1))  pos=$(( num * y - num + top ))
-    y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
+    y2=$(( y2 + num < fin - (num - 1) ? y2 + num : fin - (num - 1) ))
+
 
     arg_print "$((y - 1))" "$@"
     printf '\n'
@@ -242,7 +245,7 @@ term_scroll_down() {
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
 
     status_line 't'
-    # status_line 'b' "$y2"
+    # status_line 'b' "$y2 $pos $num $top $fin"
     status_line 'b' "$#"
 }
 
@@ -272,7 +275,7 @@ cmd_run() {
     esc DECSTBM
     esc ED2
     "$@" ||:
-    esc DECSTBM "$top" "$((LINES - 2))"
+    esc DECSTBM "$top" "$fin"
     esc DECTCEM l
     stty -icanon -echo
     hist=2
@@ -488,7 +491,7 @@ key() {
 		    'q')
 			case "$token_q" in
 			    ''|'p'|'sc'|'sg') num=1 ;;
-			    'b') num=6 ;;
+			    'b'|'B') num=6 ;;
 			esac
 		esac
 		term_scroll_up $num "$@"
@@ -501,7 +504,7 @@ key() {
 		    'q')
 			case "$token_q" in
 			    ''|'p'|'sc'|'sg') num=1 ;;
-			    'b') num=6 ;;
+			    'b'|'B') num=6 ;;
 			esac
 		esac
 		term_scroll_down $num "$@"
@@ -656,13 +659,13 @@ key() {
 			ans=${ans##*BibTeX: }
 			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$ans.pdf"
 
-			ref_gen "$@"
+			# ref_gen "$@"
 
-			IFS='|'
-			set -- $list
-			unset IFS
-			num=6 y=1 y2=$top cur=$1 ltype="Open PDF file by $BIB" msg="Open PDF file by BibTeX entry" token=o
-			term_setup $num
+			# IFS='|'
+			# set -- $list
+			# unset IFS
+			# num=6 y=1 y2=$top cur=$1 ltype="Open PDF file by $BIB" msg="Open PDF file by BibTeX entry" token=o
+			# term_setup $num
 			redraw "$num" "$@"
 			;;
 		    'p')
@@ -809,7 +812,13 @@ key() {
 		IFS="$nl"
 		set -- $faillist
 		unset IFS
-		num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Choose pdf to manually update metadata: " token=B
+                case $# in
+                    0)
+			num=1
+			set -- 'no result'
+			;;
+                esac
+		num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!$faillist" msg="Choose pdf to manually update metadata: " token=B
                 redraw $num "$@"
 	    ;;
 
@@ -824,7 +833,7 @@ key() {
 		    'q')
 			case "$token_q" in
 			    ''|'p'|'sc'|'sg') num=1 ;;
-			    'b') num=6 ;;
+			    'b'|'B') num=6 ;;
 			esac
 		esac
                 y=1 y2=$top cur=$1
@@ -838,11 +847,11 @@ key() {
 		    'q')
 			case "$token_q" in
 			    ''|'p'|'sc'|'sg') num=1 ;;
-			    'b') num=6 ;;
+			    'b'|'B') num=6 ;;
 			esac
 			;;
 		esac
-		y=$# pos=$(( num * y - (num - 1) + (top - 1) ))
+		y=$# pos=$(( num * y - num + top ))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
 		redraw "$num" "$@"
             ;;
@@ -866,7 +875,7 @@ key() {
 			;;
 		    'q')
 			case "$token_q" in
-			    'p'|'sc'|'sg'|'b')
+			    'p'|'sc'|'sg'|'b'|'B')
 				num=1
 				filter "$info" 'tmp=$line' "$nl"
 				IFS="$nl"
@@ -920,16 +929,15 @@ main() {
     bs_char=$(printf '\177')
 
     set -- $BIB_PDF_PATH/*.pdf
-    cur=$1
-
+    cur=$1 num=1
     term_resize
-    term_setup 1
+    term_setup $num
 
     trap 'term_reset'  EXIT INT
     trap 'term_resize; term_setup $num; y=1 y2=$top; redraw $num "$@"' WINCH
 
     y=1 y2=$top
-    redraw 1 "$@"
+    redraw $num "$@"
 
     get_os
     key "$@"
