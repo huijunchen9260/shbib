@@ -55,7 +55,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM h
+    esc DECTCEM l
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -130,6 +130,12 @@ list_print() {
     done
 
     esc CUP "$(( pos > y2 ? y2 : pos ))"
+}
+
+G(){ # make $cur in 'G' right
+    offset=$1
+    shift "$offset"
+    cur=$1
 }
 
 arg_print() {
@@ -258,10 +264,24 @@ prompt() {
 
     case $2 in
         r)
-            stty icanon echo 1>/dev/null 2>&1
-            read -r ans ||:
-            stty -icanon -echo
-        ;;
+	    stty -cread icanon echo 1>/dev/null 2>&1
+	    read -r ans ||:
+	    stty -icanon -echo
+	    ;;
+	# c)
+	#     stty icanon echo 1>/dev/null 2>&1
+	#     while key=$(dd ibs=1 count=1 2>/dev/null); do
+	# 	case $key${esc:=0} in
+	# 	    [[:alnum:]]) printf %s "$key" ;;
+	# 	    C2) printf '\033[C' ;;
+	# 	    D2) printf '\033[D' ;;
+	# 	    "$esc_c"*) esc=1 ;;
+	# 	    '[1') esc=2 ;;
+	# 	    *) esc=0 ;;
+	# 	esac
+	#     done
+	#     stty -icanon -echo
+	#     ;;
     esac
 
     esc DECRC
@@ -658,14 +678,6 @@ key() {
 			ans=${cur%%$nl*}
 			ans=${ans##*BibTeX: }
 			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$ans.pdf"
-
-			# ref_gen "$@"
-
-			# IFS='|'
-			# set -- $list
-			# unset IFS
-			# num=6 y=1 y2=$top cur=$1 ltype="Open PDF file by $BIB" msg="Open PDF file by BibTeX entry" token=o
-			# term_setup $num
 			redraw "$num" "$@"
 			;;
 		    'p')
@@ -720,7 +732,7 @@ key() {
 		    2) set -- 'type something'; num=1 cur=$1 ltype="Error!" msg="Error messege: " token= ;;
 		    1)
 			set -- 'Yes' \
-			      'No'
+			       'No'
 			yesno "Fail to connect Crossref. Search in Google scholar?" "" 'sg' "$@"
 			;;
 		    0)
@@ -853,6 +865,7 @@ key() {
 		esac
 		y=$# pos=$(( num * y - num + top ))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
+		G "$y" "$@"
 		redraw "$num" "$@"
             ;;
 
