@@ -55,7 +55,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM l
+    esc DECTCEM h
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -132,9 +132,8 @@ list_print() {
     esc CUP "$(( pos > y2 ? y2 : pos ))"
 }
 
-G(){ # make $cur in 'G' right
-    offset=$1
-    shift "$offset"
+cur_assign(){ # assign $cur > 9
+    shift "$1"
     cur=$1
 }
 
@@ -228,8 +227,8 @@ term_scroll_up() {
     # Restore cursor to match y2
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
     status_line 't'
-    # status_line 'b' "$y2 $pos $num $top $fin"
     status_line 'b' "$#"
+    # status_line 'b' "$y2 $pos $num $top $fin" # DEBUG
 }
 
 
@@ -251,8 +250,59 @@ term_scroll_down() {
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
 
     status_line 't'
-    # status_line 'b' "$y2 $pos $num $top $fin"
     status_line 'b' "$#"
+    # status_line 'b' "$y2 $pos $num $top $fin" # DEBUG
+}
+
+term_page_up() {
+    num=$1; shift
+    move=$(((end - top) / (3 * num) > 2 ? (end - top) / (3 * num) : 2))
+
+    case $y in
+	-*|0|1) return ;;
+    esac
+    case $((y - move)) in
+	-*|0|1) move=$((y - 1)) ;;
+    esac
+    y=$((y - move > 1 ? y - move : 1)) pos=$(( num * y - num + top ))
+
+    for i in $(seq $((y + 1)) $((y + move))); do
+	arg_print "$((y + move - i + y + 1))" "$@"
+	case "$y2" in
+	    $top) [ $num -gt 1 ] && esc CUU $((num - 1)); esc IL "$num" ;;
+	    *) esc CUU "$((num * 2 - 1))"; y2=$(( y2 > top ? y2 - num : top )) ;;
+	esac
+    done
+    arg_print "$y" "$@"
+
+    # Restore cursor to match y2
+    [ $num -gt 1 ] && esc CUU "$((num - 1))"
+    status_line 't'
+    status_line 'b' "$#"
+    # status_line 'b' "$y2 $pos $num $top $fin" # DEBUG
+}
+term_page_down() {
+    num=$1; shift
+    move=$(((end - top) / (3 * num) > 2 ? (end - top) / (3 * num) : 2))
+    case $(( y - $# + move )) in
+	[1-9]*) move=$(($# - y)) ;;
+    esac
+    y=$(( y + move ))
+    pos=$(( num * y - num + top ))
+    y2=$(( y2 + (num - 1) + move < fin - (num - 1) ? y2 + (num - 1) + move : fin - (num - 1) ))
+
+
+    for i in $(seq $((y - move)) $((y - 1))); do
+	arg_print "$i" "$@"
+	printf '\n'
+    done
+    arg_print "$y" "$@"
+
+    [ $num -gt 1 ] && esc CUU "$((num - 1))"
+
+    status_line 't'
+    status_line 'b' "$#"
+    # status_line 'b' "$y2 $pos $num $top $fin" # DEBUG
 }
 
 prompt() {
@@ -504,6 +554,32 @@ waitclip() {
 key() {
     while key=$(dd ibs=1 count=1 2>/dev/null); do
 	case $key${esc:=0} in
+	    "$ctrl_u"*) # token
+		case "$token" in
+		    's'|'c'|'o') num=6 ;;
+		    ''|'?'|'p'|'b'|'B') num=1 ;;
+		    'q')
+			case "$token_q" in
+			    ''|'p'|'sc'|'sg') num=1 ;;
+			    'b'|'B') num=6 ;;
+			esac
+		esac
+		term_page_up $num "$@"
+	    ;;
+
+	    "$ctrl_f"*) # token
+		case "$token" in
+		    's'|'c'|'o') num=6 ;;
+		    ''|'?'|'p'|'b'|'B') num=1 ;;
+		    'q')
+			case "$token_q" in
+			    ''|'p'|'sc'|'sg') num=1 ;;
+			    'b'|'B') num=6 ;;
+			esac
+		esac
+		term_page_down $num "$@"
+	    ;;
+
 	    k?|A2) # token
 		case "$token" in
 		    's'|'c'|'o') num=6 ;;
@@ -865,7 +941,7 @@ key() {
 		esac
 		y=$# pos=$(( num * y - num + top ))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
-		G "$y" "$@"
+		cur_assign "$y" "$@"
 		redraw "$num" "$@"
             ;;
 
@@ -915,12 +991,14 @@ key() {
 			'j/↓ - down' \
 		        'l/→ - right' \
 		        'h/← - left' \
+			'Ctrl-f - PageDown' \
+			'Ctrl-u - PageUp' \
                         'g - go to top' \
                         'G - go to bottom' \
 			's - search online by text' \
 			'p - search online by metadata in PDF file' \
 			'c - copy BibTeX entry from your $BIB' \
-			'o - Open PDF file by BibTeX entry' \
+			'o - open PDF file by BibTeX entry' \
 			'b - manually build database by rename and encode metadata into PDF file' \
 			'B - automatically build database by rename and encode metadata into PDF file' \
                         '/ - search in $BIB_PDF_PATH/<input>*' \
@@ -940,6 +1018,9 @@ key() {
 main() {
     esc_c=$(printf '\033')
     bs_char=$(printf '\177')
+    ctrl_f=$(printf '\006')
+    ctrl_u=$(printf '\025')
+    tilda=$(printf '\176')
 
     set -- $BIB_PDF_PATH/*.pdf
     cur=$1 num=1
@@ -959,4 +1040,5 @@ main() {
 nl='
 '
 tab='	'
+
 main "$@" >/dev/tty
