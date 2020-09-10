@@ -32,12 +32,14 @@ k/↑ - up
 j/↓ - down
 l/→ - right
 h/← - left
+Ctrl-f - PageDown
+Ctrl-u - PageUp
 g - go to top
 G - go to bottom
 s - search online by text
 p - search online by metadata in PDF file
 c - copy BibTeX entry from your $BIB
-o - Open PDF file by BibTeX entry
+o - open PDF file by BibTeX entry
 b - manually build database by rename and encode metadata into PDF file
 B - automatically build database by rename and encode metadata into PDF file
 / - search in $BIB_PDF_PATH/<input>*
