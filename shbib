@@ -14,6 +14,40 @@
 
 # Stolen from shfm
 # Reference: https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_sequences
+
+# Adjust tex template to your like
+tex_template() {
+    printf '%s\n' \
+	'\documentclass[a4paper]{article}' \
+	'% Beamer' \
+	'% \documentclass{beamer}' \
+	'% \usefonttheme[onlymath]{serif}' \
+	'% \usetheme{metropolis}' \
+	'' \
+	'\usepackage[utf8]{inputenc}' \
+	'\usepackage[T1]{fontenc}' \
+	'\usepackage{textcomp}' \
+	'\usepackage{amsmath, amssymb, amsthm}' \
+	'\usepackage{import}' \
+	'\usepackage{pdfpages}' \
+	'\usepackage{transparent}' \
+	'\usepackage{xcolor}' \
+	'\newcommand{\inkfig}[2][1]{%' \
+	'    \def\svgwidth{#1\columnwidth}' \
+	'    \import{./figures/}{#2.pdf_tex}' \
+	'}' \
+	'\pdfsuppresswarningpagegroup=1' \
+	"\\title{Note on \"$title\"}" \
+	"\\author{Author(s): $author}" \
+	'\date{\today}' \
+	'\begin{document}' \
+	'\maketitle' \
+	'' \
+	'' \
+	'' \
+	'\end{document}' > "$note"
+}
+
 esc() {
     case $1 in
         # vt100 (IL is vt102) (DECTCEM is vt520)
@@ -55,7 +89,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM h
+    esc DECTCEM l
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -156,12 +190,12 @@ arg_print() {
 arg_format() { # token
     esc EL0
     case "$token" in
-	's'|'c'|'o') printf %s "${1%$nl}" ;;
+	's'|'c'|'o'|'n') printf %s "${1%$nl}" ;;
 	'?') printf %s "$1" ;;
         ''|'p'|'b'|'B') printf %s "${1##*/}" ;;
 	'q')
 	    case "$token_q" in
-	        ''|'p'|'sc'|'sg') printf %s "$1" ;;
+	        ''|'p'|'sc'|'sg'|'so') printf %s "$1" ;;
 		'b'|'B') printf %s "${1%$nl}" ;;
 	    esac
 	    ;;
@@ -261,10 +295,10 @@ term_page_up() {
     case $y in
 	-*|0|1) return ;;
     esac
-    case $((y - move)) in
-	-*|0|1) move=$((y - 1)) ;;
+    case $((y - 1 - move)) in
+	-*|0) move=$((y - 1)) ;;
     esac
-    y=$((y - move > 1 ? y - move : 1)) pos=$(( num * y - num + top ))
+    y=$((y - move)) pos=$(( num * y - num + top ))
 
     for i in $(seq $((y + 1)) $((y + move))); do
 	arg_print "$((y + move - i + y + 1))" "$@"
@@ -281,6 +315,7 @@ term_page_up() {
     status_line 'b' "$#"
     # status_line 'b' "$y2 $pos $num $top $fin" # DEBUG
 }
+
 term_page_down() {
     num=$1; shift
     move=$(((end - top) / (3 * num) > 2 ? (end - top) / (3 * num) : 2))
@@ -318,20 +353,6 @@ prompt() {
 	    read -r ans ||:
 	    stty -icanon -echo
 	    ;;
-	# c)
-	#     stty icanon echo 1>/dev/null 2>&1
-	#     while key=$(dd ibs=1 count=1 2>/dev/null); do
-	# 	case $key${esc:=0} in
-	# 	    [[:alnum:]]) printf %s "$key" ;;
-	# 	    C2) printf '\033[C' ;;
-	# 	    D2) printf '\033[D' ;;
-	# 	    "$esc_c"*) esc=1 ;;
-	# 	    '[1') esc=2 ;;
-	# 	    *) esc=0 ;;
-	# 	esac
-	#     done
-	#     stty -icanon -echo
-	#     ;;
     esac
 
     esc DECRC
@@ -370,41 +391,70 @@ ref_search() {
 	*)
 	    ltype="Searching..."
 	    status_line 'b' "$#"
-	    html="$(curl -s "https://search.crossref.org/?q=$url")"
-	    case "$html" in
+	    json=$(curl -s "https://api.crossref.org/works?query=$url")
+	    case "$json" in
 		*'Service Unavailable'*) return 1 ;;
 		*)
-		    IFS="$nl"
-		    set -- $html
+		    # Extract and number 6 field from json
+		    IFS=','
+		    set -- $json
 		    unset IFS
+		    for line do
+			# Define level of object
+			while c=${line%%"${line#?}"}; do # %% is much efficient than %
+			    case $c in
+				'') safe="$safe,"; break ;;
+				'{') lv=$((lv + 1)) ;;
+				'}') lv=$((lv - 1)) ;;
+				':') safe=$lv$safe$c ;; # key step: put $lv before $safe
+				*) safe=$safe$c ;;
+			    esac
+			    line=${line#?}
+			done
+			# Match object and lv
+			case $safe in
+			    *3'"indexed"'*) tmplist="$tmplist|" ;;
+			    *3'"title"'*) tmp=${safe#*[\"}; tmplist="$tmplist${nl}1Title: ${tmp%\"*}" ;;
+			    *3'"container-title"'*) tmp=${safe#*[\"}; tmplist="$tmplist${nl}4Journal: ${tmp%\"*}" ;;
+			    *4'"given"'*) tmp=${safe#*:\"}; given="${tmp%\"*}" ;;
+			    *4'"family"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}5Author(s): $given ${tmp%\"*}" ;;
+			    *3'"DOI"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}6DOI: ${tmp%\"*}" ;;
+			    *3'"type"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}2Category: ${tmp%\"*}" ;;
+			    *43'"published-print"'*'"date-parts"'*) tmp=${safe#*[[}; tmplist="$tmplist${nl}3Date: ${tmp%]]*}" ;;
+			esac
+			unset safe
+		    done
+		    unset lv
 
+		    # Sort each field based on numbering
+		    IFS='|'
+		    set -- $tmplist
+		    unset IFS
+		    for line do
+			tmp2list="$tmp2list$(printf '%s' "$line" | sort -n)"
+		    done
+
+		    # Combining authors and Add '|' back to Title
+		    IFS="$nl"
+		    set -- $tmp2list
+		    unset IFS
 		    for line do
 			case $line in
-			    *Author*)
-				tmp=${line#\<p\ class=\'expand\'\>Authors:\ }
-				tmplist="$tmplist${nl}${tab}Author(s): ${tmp%\<\/p\>}"
+			    *'Author(s)'*)
+				case $preline in
+				    *'Author(s)'*) tmp3list="$tmp3list and ${line##*Author(s): }" ;;
+				    *) tmp3list="$tmp3list${nl}${tab}${line#?}" ;;
+				esac
 				;;
-			    'published')
-				tmp=${preline#\<b\>}
-				tmplist="$tmplist${nl}${tab}Category: ${tmp%\<\/b\>}"
-				;;
-			    [0-9][0-9][0-9][0-9]) tmplist="$tmplist${nl}${tab}Year: $line";;
-			    https\:\/\/doi.org\/*|https\:\/\/dx.org\/*) tmplist="$tmplist${nl}${tab}Doi: $line" ;;
+			    *'Title'*) tmp3list="$tmp3list${nl}|${line#?}" ;;
+			    *) tmp3list="$tmp3list${nl}${tab}${line#?}" ;;
 			esac
-			case $preline in
-			    'in')
-				tmp=${line#\<b\>}
-				tmplist="$tmplist${nl}${tab}Journal: ${tmp%\<\/b\>}"
-				;;
-			    \<p\ class=\'lead\'\>) tmplist="$tmplist${nl}|$line" ;;
-			esac
-
-			preline="$line"
+			preline=$line
 		    done
 
 		    # Add \n if some entry does not have 6 lines
 		    IFS='|'
-		    set -- $tmplist; shift
+		    set -- $tmp3list; shift
 		    unset IFS
 
 		    # Each item must have totally 6 \n
@@ -521,10 +571,10 @@ yesno() {
 }
 
 filter() {
-    format="$2" IFS="$3"
+    format="$2" IFS="$3" str="$4"
     set -- $1
     for line do
-	eval "$format"; tmp2=${tmp##*$ans}
+	eval "$format"; tmp2=${tmp##*$str}
 	case $(( ${#tmp} - ${#tmp2} )) in
 	    0) shift ;;
 	    *) filter="$filter$IFS$tmp" ;;
@@ -556,11 +606,11 @@ key() {
 	case $key${esc:=0} in
 	    "$ctrl_u"*) # token
 		case "$token" in
-		    's'|'c'|'o') num=6 ;;
+		    's'|'c'|'o'|'n') num=6 ;;
 		    ''|'?'|'p'|'b'|'B') num=1 ;;
 		    'q')
 			case "$token_q" in
-			    ''|'p'|'sc'|'sg') num=1 ;;
+			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
 			    'b'|'B') num=6 ;;
 			esac
 		esac
@@ -569,11 +619,11 @@ key() {
 
 	    "$ctrl_f"*) # token
 		case "$token" in
-		    's'|'c'|'o') num=6 ;;
+		    's'|'c'|'o'|'n') num=6 ;;
 		    ''|'?'|'p'|'b'|'B') num=1 ;;
 		    'q')
 			case "$token_q" in
-			    ''|'p'|'sc'|'sg') num=1 ;;
+			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
 			    'b'|'B') num=6 ;;
 			esac
 		esac
@@ -582,11 +632,11 @@ key() {
 
 	    k?|A2) # token
 		case "$token" in
-		    's'|'c'|'o') num=6 ;;
+		    's'|'c'|'o'|'n') num=6 ;;
 		    ''|'?'|'p'|'b'|'B') num=1 ;;
 		    'q')
 			case "$token_q" in
-			    ''|'p'|'sc'|'sg') num=1 ;;
+			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
 			    'b'|'B') num=6 ;;
 			esac
 		esac
@@ -595,11 +645,11 @@ key() {
 
             j?|B2) # token
 		case "$token" in
-		    's'|'c'|'o') num=6 ;;
+		    's'|'c'|'o'|'n') num=6 ;;
 		    ''|'?'|'p'|'b'|'B') num=1 ;;
 		    'q')
 			case "$token_q" in
-			    ''|'p'|'sc'|'sg') num=1 ;;
+			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
 			    'b'|'B') num=6 ;;
 			esac
 		esac
@@ -624,9 +674,9 @@ key() {
 						case "${bibtex%%$nl*}" in
 						    @[[:alpha:]]*[[:alnum:]_],)
 							printf '%s\n\n' "$bibtex" >> "$BIB"
-							set -- "Reference added to $BIB; press h to leave"
-							num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
-							redraw $num "$@"
+							set -- 'Yes' \
+							       'No'
+							yesno "Reference added to $BIB; Download PDF file?" "" 'so' "$@"
 							;;
 						    *)
 							set -- 'Not copying BibTeX; press h to leave'
@@ -635,6 +685,19 @@ key() {
 						esac
 						;;
 					esac
+					;;
+				    'so')
+					IFS="$nl"
+					set -- $bibtex
+					for line do
+					    case $line in
+						*[[:space:]]url*=*) tmp="${line#*\{}"; url="${tmp%\}*}" ;;
+					    esac
+					done
+					cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "$url" 1>/dev/null &
+					set -- "Open PDF file; press h to leave"
+					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
+					redraw $num "$@"
 					;;
 				    'sg')
 					cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
@@ -697,21 +760,19 @@ key() {
 					redraw $num "$@"
 					;;
 				    'B')
-					while [ -n $faillist ]; do
-					    entry_gen "$@"
-					    exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
-					    exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
-					    case $? in
-						0) msg="Successfully update database!" ;;
-						*) msg="Fail to update database ㄒoㄒ" ;;
-					    esac
-					    faillist="${faillist#*"$filename"}${nl}${faillist%%"$filename"*}"
-					    IFS="$nl"
-					    set -- $faillist
-					    unset IFS
-					    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" token=B
-					    redraw $num "$@"
-					done
+					entry_gen "$@"
+					exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
+					exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
+					case $? in
+					    0) msg="Successfully update database!" ;;
+					    *) msg="Fail to update database ㄒoㄒ" ;;
+					esac
+					faillist="${faillist#*"$filename"}${nl}${faillist%%"$filename"*}"
+					IFS="$nl"
+					set -- $faillist
+					unset IFS
+					num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" token=B
+					redraw $num "$@"
 					;;
 				esac
 				;;
@@ -781,6 +842,29 @@ key() {
 			    'B') token_q=B ;;
 			esac
 			num=6 y=1 y2=$top cur=$1 ltype="Build database" msg="Choose which BibTeX entry?" token=q
+			case $# in
+			    0)
+				num=1
+				set -- 'All PDF files in database is updated!'
+				;;
+			esac
+			term_setup $num
+			redraw "$num" "$@"
+			;;
+		    'n')
+			ref=${cur##*BibTeX: }
+			ref=${ref%%$nl*}
+			note="$BIB_NOTE_PATH/$ref/$ref.tex"
+			[ -w "$note" ] ||
+			    {
+				title=${cur##*Title: }
+				title=${title%%$nl*}
+				author=${cur##*Author(s): }
+				author=${author%%$nl*}
+				[ -d "$BIB_NOTE_PATH/$ref" ] || mkdir -p "$BIB_NOTE_PATH/$ref/"
+				tex_template "$@"
+			    }
+			cmd_run "${BIB_OPENER:="${EDITOR:=vi}"}" "$note"
 			term_setup $num
 			redraw "$num" "$@"
 			;;
@@ -864,15 +948,15 @@ key() {
 		    case "$type" in
 		        '%PDF'*)
 			    TMP="${pdf##*/}"; basename="${TMP%.*}"
-			    grep -q "$basename" "$BIB"
+			    grep '@' "$BIB" | grep -q "$basename"
 			    case $? in
 			        0) continue ;;
 				*)
-				    info=$(exiftool $pdf)
+				    code="$code 1"
+				    info=$(exiftool "$pdf")
 				    tmp=${info##*Title                           : }
-				    title=${tmp%%$nl*}; ans=$title
-				    filter "$(cat -u $BIB)" 'tmp=$line' '@'
-				    unset IFS
+				    title=${tmp%%$nl*}
+				    filter "$(cat -u $BIB)" 'tmp=$line' '@' "$title"
 				    case $filter in
 				        '') faillist="$faillist${nl}$pdf" ;;
 					*)
@@ -881,15 +965,19 @@ key() {
 					    unset IFS
 					    for line do
 						case $line in
-						    @*) tmp="${line#*\{}"; label="${tmp%,}" ;;
+						    [[:alpha:]]*{[[:alnum:]_]*,) tmp="${line#*\{}"; label="${tmp%,}" ;;
 						    *[[:space:]]title*=*) tmp="${line#*\{}"; title="${tmp%\}*}" ;;
 						    *[[:space:]]author*=*) tmp="${line#*\{}"; author="${tmp%\}*}" ;;
 						    *[[:space:]]journal*=*) tmp="${line#*\{}"; journal="${tmp%\}*}" ;;
 						    *[[:space:]]doi*=*) tmp="${line#*\{}"; doi="${tmp%\}*}" ;;
 						esac
+						unset tmp
 					    done
 					    exiftool -wm cg -Description="$journal" "$pdf" -overwrite_original 1>/dev/null
 					    exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$pdf" -overwrite_original 1>/dev/null
+					    set -- "$label.pdf updated."
+					    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
+					    redraw $num "$@"
 					    ;;
 				    esac
 				    ;;
@@ -900,14 +988,23 @@ key() {
 		IFS="$nl"
 		set -- $faillist
 		unset IFS
+		num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode! $code ${filter}" msg="Choose pdf to manually update metadata: " token=B
                 case $# in
-                    0)
-			num=1
-			set -- 'no result'
-			;;
+                    0) set -- 'All PDF files in database is updated!'; token=? ;;
                 esac
-		num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!$faillist" msg="Choose pdf to manually update metadata: " token=B
                 redraw $num "$@"
+	    ;;
+
+	    n?)
+		BIB_NOTE_PATH="$BIB_PDF_PATH/Notes"
+		ref_gen "$@"
+
+		IFS='|'
+		set -- $list
+		unset IFS
+		num=6 y=1 y2=$top cur=$1 ltype="Write notes for BibTeX entry" msg="Choose BibTeX entry to write note on: " token=n
+		term_setup $num
+		redraw "$num" "$@"
 	    ;;
 
             g?) # token
@@ -916,11 +1013,11 @@ key() {
                 esac
 
 		case "$token" in
-		    's'|'c'|'o') num=6 ;;
+		    's'|'c'|'o'|'n') num=6 ;;
 		    ''|'?'|'p'|'b'|'B') num=1 ;;
 		    'q')
 			case "$token_q" in
-			    ''|'p'|'sc'|'sg') num=1 ;;
+			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
 			    'b'|'B') num=6 ;;
 			esac
 		esac
@@ -930,11 +1027,11 @@ key() {
 
             G?) # token
 		case "$token" in
-		    's'|'c'|'o') num=6 ;;
+		    's'|'c'|'o'|'n') num=6 ;;
 		    ''|'?'|'p'|'b'|'B') num=1 ;;
 		    'q')
 			case "$token_q" in
-			    ''|'p'|'sc'|'sg') num=1 ;;
+			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
 			    'b'|'B') num=6 ;;
 			esac
 			;;
@@ -951,22 +1048,22 @@ key() {
 		case "$token" in
 		    ''|'p'|'b'|'B')
 			num=1
-			filter "$BIB_PDF_PATH/*.pdf" 'tmp=$line' "$nl"
+			filter "$BIB_PDF_PATH/*.pdf" 'tmp=$line' "$nl" "$ans"
 			IFS="$nl"
 			set -- $filter
 			unset IFS filter
 			;;
-		    's'|'c'|'o')
-			filter "$list" 'tmp=$line' '|'
+		    's'|'c'|'o'|'n')
+			filter "$list" 'tmp=$line' '|' "$ans"
 			IFS='|'
 			set -- $filter
 			unset IFS filter
 			;;
 		    'q')
 			case "$token_q" in
-			    'p'|'sc'|'sg'|'b'|'B')
+			    'p'|'sc'|'sg'|'so'|'b'|'B')
 				num=1
-				filter "$info" 'tmp=$line' "$nl"
+				filter "$info" 'tmp=$line' "$nl" "$ans"
 				IFS="$nl"
 				set -- $filter
 				unset IFS filter
@@ -1001,6 +1098,7 @@ key() {
 			'o - open PDF file by BibTeX entry' \
 			'b - manually build database by rename and encode metadata into PDF file' \
 			'B - automatically build database by rename and encode metadata into PDF file' \
+			'n - write notes for BibTeX entry' \
                         '/ - search in $BIB_PDF_PATH/<input>*' \
                         '? - show keybinds'
                 num=1 y=1 y2=$top cur=$1 ltype= msg=keybinds token='?'
@@ -1040,5 +1138,4 @@ main() {
 nl='
 '
 tab='	'
-
 main "$@" >/dev/tty
