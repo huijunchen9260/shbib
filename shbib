@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Dependency: grep, curl, exiftool, xclip/xsel/pbcopy
+# Dependency: grep, curl, sort, exiftool, xclip/xsel/pbcopy
 
 # Variable explain:
 # $y: the current argument
@@ -11,9 +11,6 @@
 # $token: indicator for actions
 # Dimension is adjustable by $top & $bottom
 
-
-# Stolen from shfm
-# Reference: https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_sequences
 
 # Adjust tex template to your like
 tex_template() {
@@ -48,6 +45,8 @@ tex_template() {
 	'\end{document}' > "$note"
 }
 
+# Stolen from shfm
+# Reference: https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_sequences
 esc() {
     case $1 in
         # vt100 (IL is vt102) (DECTCEM is vt520)
@@ -474,6 +473,7 @@ ref_search() {
 			esac
 		    done
 		    list=${list#*|}
+		    unset tmplist tmp2list tmp3list
 		    ;;
 	    esac
     esac
@@ -718,6 +718,7 @@ key() {
 					ans=${cur##* : }
 					ans=${ans##*doi.org/}
 					ans="${ans%%$nl*}"
+					ans="${ans%%\\\/*}/${ans##*\\\/}"
 					case "$ans" in
 					    10\.[0-9][0-9][0-9][0-9]\/[^[:space:][:cntrl:]]*) # match doi
 						bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
@@ -791,11 +792,12 @@ key() {
 				ans=${cur##*: }
 				ans=${ans##*doi.org/}
 				ans="${ans%%$nl*}"
+				ans="${ans%%\\\/*}/${ans##*\\\/}"
 				bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
 
 				set -- 'Yes' \
 				       'No'
-				yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
+				yesno "Copy bibtex to $BIB?" "$ans$bibtex" 'sc' "$@"
 				;;
 			esac
 			;;
