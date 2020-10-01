@@ -718,10 +718,18 @@ key() {
 					ans=${cur##* : }
 					ans=${ans##*doi.org/}
 					ans="${ans%%$nl*}"
-					ans="${ans%%\\\/*}/${ans##*\\\/}"
+
+					IFS='\'
+					set -- $ans
+					unset IFS
+					for line do
+					    safeans="$safeans$line"
+					done
+
+
 					case "$ans" in
 					    10\.[0-9][0-9][0-9][0-9]\/[^[:space:][:cntrl:]]*) # match doi
-						bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
+						bibtex=$(curl -s "http://api.crossref.org/works/$safeans/transform/application/x-bibtex")
 						set -- 'Yes' \
 						       'No'
 						yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
@@ -773,6 +781,9 @@ key() {
 					set -- $faillist
 					unset IFS
 					num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" token=B
+					case $# in
+					    0) set -- 'All PDF files in database is updated!'; token=? ;;
+					esac
 					redraw $num "$@"
 					;;
 				esac
@@ -792,12 +803,18 @@ key() {
 				ans=${cur##*: }
 				ans=${ans##*doi.org/}
 				ans="${ans%%$nl*}"
-				ans="${ans%%\\\/*}/${ans##*\\\/}"
-				bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
+				IFS='\'
+				set -- $ans
+				unset IFS
+				for line do
+				    safeans="$safeans$line"
+				done
+
+				bibtex=$(curl -s "http://api.crossref.org/works/$safeans/transform/application/x-bibtex")
 
 				set -- 'Yes' \
 				       'No'
-				yesno "Copy bibtex to $BIB?" "$ans$bibtex" 'sc' "$@"
+				yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
 				;;
 			esac
 			;;
@@ -954,7 +971,6 @@ key() {
 			    case $? in
 			        0) continue ;;
 				*)
-				    code="$code 1"
 				    info=$(exiftool "$pdf")
 				    tmp=${info##*Title                           : }
 				    title=${tmp%%$nl*}
@@ -990,7 +1006,7 @@ key() {
 		IFS="$nl"
 		set -- $faillist
 		unset IFS
-		num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode! $code ${filter}" msg="Choose pdf to manually update metadata: " token=B
+		num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Choose pdf to manually update metadata: " token=B
                 case $# in
                     0) set -- 'All PDF files in database is updated!'; token=? ;;
                 esac
