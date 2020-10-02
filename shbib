@@ -364,9 +364,11 @@ cmd_run() {
     esc DECTCEM h
     esc DECSTBM
     esc ED2
+    esc DECAWM h
     "$@" ||:
     esc DECSTBM "$top" "$fin"
     esc DECTCEM l
+    esc DECAWM l
     stty -icanon -echo
     hist=2
 }
@@ -719,17 +721,9 @@ key() {
 					ans=${ans##*doi.org/}
 					ans="${ans%%$nl*}"
 
-					IFS='\'
-					set -- $ans
-					unset IFS
-					for line do
-					    safeans="$safeans$line"
-					done
-
-
 					case "$ans" in
 					    10\.[0-9][0-9][0-9][0-9]\/[^[:space:][:cntrl:]]*) # match doi
-						bibtex=$(curl -s "http://api.crossref.org/works/$safeans/transform/application/x-bibtex")
+						bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
 						set -- 'Yes' \
 						       'No'
 						yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
@@ -883,6 +877,7 @@ key() {
 				[ -d "$BIB_NOTE_PATH/$ref" ] || mkdir -p "$BIB_NOTE_PATH/$ref/"
 				tex_template "$@"
 			    }
+			term_setup 1
 			cmd_run "${BIB_OPENER:="${EDITOR:=vi}"}" "$note"
 			term_setup $num
 			redraw "$num" "$@"
