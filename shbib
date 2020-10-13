@@ -273,7 +273,7 @@ term_scroll_down() {
     esac
 
     y=$((y + 1))  pos=$(( num * y - num + top ))
-    y2=$(( y2 + num < fin - (num - 1) ? y2 + num : fin - (num - 1) ))
+    y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
 
 
     arg_print "$((y - 1))" "$@"
@@ -323,7 +323,7 @@ term_page_down() {
     esac
     y=$(( y + move ))
     pos=$(( num * y - num + top ))
-    y2=$(( y2 + (num - 1) + move < fin - (num - 1) ? y2 + (num - 1) + move : fin - (num - 1) ))
+    y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
 
 
     for i in $(seq $((y - move)) $((y - 1))); do
@@ -396,6 +396,39 @@ ref_search() {
 	    case "$json" in
 		*'Service Unavailable'*) return 1 ;;
 		*)
+		    # Extract and number 6 field from json
+		    # IFS=','
+		    # set -- $json
+		    # unset IFS
+		    # for line do
+			# # Define level of object
+			# while c=${line%%"${line#?}"}; do # %% is much efficient than %
+			    # case $c in
+				# '') safe="$safe,${nl}"; break ;;
+				# '{') lv=$((lv + 1)) ;;
+				# '}') lv=$((lv - 1)) ;;
+				# ':') safe="$lv$safe$c" ;; # key step: put $lv before $safe
+				# *) safe="$safe$c" ;;
+			    # esac
+			    # tmplist="$tmplist$safe"
+			    # line=${line#?}
+			    # unset safe
+			# done
+		    # done
+		    # unset lv
+			# Match object and lv
+			# case $safe in
+			#     *3'"indexed"'*) tmplist="$tmplist|" ;;
+			#     *3'"title"'*) tmp=${safe#*[\"}; tmplist="$tmplist${nl}1Title: ${tmp%\"*}" ;;
+			#     *3'"container-title"'*) tmp=${safe#*[\"}; tmplist="$tmplist${nl}4Journal: ${tmp%\"*}" ;;
+			#     *4'"given"'*) tmp=${safe#*:\"}; given="${tmp%\"*}" ;;
+			#     *4'"family"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}5Author(s): $given ${tmp%\"*}" ;;
+			#     *3'"DOI"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}6DOI: ${tmp%\"*}" ;;
+			#     *3'"type"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}2Category: ${tmp%\"*}" ;;
+			#     *43'"published-print"'*'"date-parts"'*) tmp=${safe#*[[}; tmplist="$tmplist${nl}3Date: ${tmp%]]*}" ;;
+			# esac
+			# unset safe
+
 		    # Extract and number 6 field from json
 		    IFS=','
 		    set -- $json
