@@ -25,7 +25,7 @@ printf '%s\n' "export BIB_PDF_PATH='path/to/your/pdf/directory'" >> $HOME/.profi
 
 To run `shbib`, you just need open your terminal, type `git clone https://github.com/huijunchen9260/shbib` to download this project, `cd` to the directory with `shbib` script, and run `shbib` by typing `./shbib`.
 
-Type `?` to get the following keybinding:
+Type `?` to understnad the keybinding corresponding to each action:
 
 ```
 k/↑ - up
@@ -59,8 +59,9 @@ Writing in POSIX shell is an adventure. What you need to do is to force yourself
 3. `case` statement globbing matching -> replace `sed` and `awk` regular expression matching
 4. Flow control using exit value (`ref_search` function and shell special parameters `$?`)
 5. Create a newline and tab character, `$nl` an `$tab`, by create a "hard" character:
-```sh
-nl='
-'
-tab='	'
-```
+    ```sh
+    nl='
+    '
+    tab='	'
+    ```
+6. Json file manipulation is also possible by pure POSIX shell. Look into `shbib` for `json_pretty_print` function for detail information.

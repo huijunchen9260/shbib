@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Dependency: grep, curl, sort, exiftool, xclip/xsel/pbcopy
+# Dependency: read, grep, curl, sort, exiftool, xclip/xsel/pbcopy,
 
 # Variable explain:
 # $y: the current argument
@@ -261,7 +261,7 @@ term_scroll_up() {
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
     status_line 't'
     status_line 'b' "$#"
-    # status_line 'b' "$y2 $pos $num $top $fin" # DEBUG
+    # status_line 'b' "y2:$y2 pos:$pos num:$num top:$top fin:$fin" # DEBUG
 }
 
 
@@ -273,7 +273,7 @@ term_scroll_down() {
     esac
 
     y=$((y + 1))  pos=$(( num * y - num + top ))
-    y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
+    y2=$(( y2 + num < fin - (num - 1) ? y2 + num : fin - (num - 1) ))
 
 
     arg_print "$((y - 1))" "$@"
@@ -284,7 +284,7 @@ term_scroll_down() {
 
     status_line 't'
     status_line 'b' "$#"
-    # status_line 'b' "$y2 $pos $num $top $fin" # DEBUG
+    # status_line 'b' "y2:$y2 pos:$pos num:$num top:$top fin:$fin" # DEBUG
 }
 
 term_page_up() {
@@ -312,7 +312,7 @@ term_page_up() {
     [ $num -gt 1 ] && esc CUU "$((num - 1))"
     status_line 't'
     status_line 'b' "$#"
-    # status_line 'b' "$y2 $pos $num $top $fin" # DEBUG
+    # status_line 'b' "y2:$y2 pos:$pos num:$num top:$top fin:$fin" # DEBUG
 }
 
 term_page_down() {
@@ -323,7 +323,7 @@ term_page_down() {
     esac
     y=$(( y + move ))
     pos=$(( num * y - num + top ))
-    y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
+    y2=$(( y2 + num * move < fin - (num - 1) ? y2 + num * move : fin - (num - 1) ))
 
 
     for i in $(seq $((y - move)) $((y - 1))); do
@@ -336,7 +336,7 @@ term_page_down() {
 
     status_line 't'
     status_line 'b' "$#"
-    # status_line 'b' "$y2 $pos $num $top $fin" # DEBUG
+    # status_line 'b' "y2:$y2 pos:$pos num:$num top:$top fin:$fin" # DEBUG
 }
 
 prompt() {
@@ -353,7 +353,6 @@ prompt() {
 	    stty -icanon -echo
 	    ;;
     esac
-
     esc DECRC
     esc DECTCEM l
     status_line 'b' "($y/$#) $PWD"
@@ -373,17 +372,136 @@ cmd_run() {
     hist=2
 }
 
+
+json_pretty_print() {
+    unset tmplist
+    IFS=','
+    set -- $1
+    unset IFS
+    for line do
+	# Define level of object
+	while c=${line%%"${line##?}"}; do # %% is much efficient than %
+	    nline=${line##?}
+	    nc=${nline%%"${nline##?}"} # forward looking
+	    case $c in
+		'')
+		    case $quote in
+			0)
+			    sv=$((lv * 2))
+			    space="$(printf %${sv}s)" # space per lv*2
+			    safe="$safe,${nl}$space" ;;
+			10) safe="$safe," ;;
+		    esac
+		    break ;;
+		'{'|'[')
+		    lv=$((lv + 1)); sv=$((lv * 2))
+		    case $nc in
+			'}'|']')
+			    safe="$safe$c"
+			    ;;
+		        *)
+			    space="$(printf %${sv}s)" # space per lv*2
+			    safe="$safe$c${nl}$space"
+			    ;;
+		    esac
+		    ;;
+		'}'|']')
+		    lv=$((lv - 1)); sv=$((lv * 2))
+		    case $nc in
+		        '')
+			    case $pre_c in
+			        '{'|'[')
+				    safe="$safe$c"
+				    ;;
+				*)
+				    space="$(printf %${sv}s)" # space per lv*2
+				    safe="$safe${nl}$space$c"
+				    ;;
+			    esac
+			    ;;
+			'}'|']')
+			    space="$(printf %${sv}s)" # space per lv*2
+			    safe="$safe${nl}$space$c"
+			    ;;
+			*)
+			    space="$(printf %${sv}s)" # space per lv*2
+			    safe="$safe$c${nl}$space"
+			    ;;
+		    esac
+		    ;;
+		'"')
+		    quote=$(( quote > 5 ? 0 : 10 )) # with-in quote indicator
+		    # safe=$safe$c # for formal formatting
+		    ;;
+		*)
+		    safe=$safe$c
+		    ;;
+	    esac
+	    line=${line##?}
+	    pre_c=$c
+	done
+	tmplist="$tmplist$safe"
+	unset safe
+    done
+    unset safe lv sv quote pre_c
+}
+
+json_match() {
+    unset tmp2list
+    IFS="$nl"
+    set -- $1
+    unset IFS
+    for line do
+	case $preline in
+	    '        indexed'*) tmp2list="$tmp2list|" ;;
+	    '        title'*) tmp2list="$tmp2list${nl}1Title: ${line##${line%%[![:space:]]*}}";;
+	    '        container-title'*) tmp2list="$tmp2list${nl}4Journal: ${line##${line%%[![:space:]]*}}";;
+	esac
+	case $line in
+	    '            given'*)
+		tmp="${line##${line%%[![:space:]]*}}"
+		tmp="${tmp##*:}"
+		given="${tmp%%,*}"
+		;;
+	    '            family'*)
+		tmp="${line##${line%%[![:space:]]*}}"
+		tmp="${tmp##*:}"
+		tmp="${tmp%%,*}"
+		tmp2list="$tmp2list${nl}5Author(s): $given $tmp"
+		;;
+	    '        DOI'*)
+		tmp="${line##${line%%[![:space:]]*}}"
+		tmp="${tmp##*:}"
+		tmp="${tmp%%,*}"
+		tmp2list="$tmp2list${nl}6DOI: $tmp";;
+	    '        type'*)
+		tmp="${line##${line%%[![:space:]]*}}"
+		tmp="${tmp##*:}"
+		tmp="${tmp%%,*}"
+		tmp2list="$tmp2list${nl}2Category: $tmp" ;;
+	esac
+	case $pre3line$pre2line in
+	    '        published-print'*'          date-parts'*)
+		tmp="${line##${line%%[![:space:]]*}}"
+		tmp="${tmp##*:}"
+		tmp="${tmp%%,*}"
+		tmp2list="$tmp2list${nl}3Date: $tmp";;
+	esac
+	pre3line=$pre2line
+	pre2line=$preline
+	preline=$line
+    done
+}
+
 ref_search() {
     tmplist= list=
-    str=$ans
-    url=
+    str=$ans url=
     while c=${str%"${str#?}"}; do
 	case $c in
 	    '') break ;;
 	    [[:space:]]) url=$url\+ ;;
 	    *)           url=$url$c ;;
 	esac
-
 	str=${str#?}
     done
 
@@ -396,99 +514,39 @@ ref_search() {
 	    case "$json" in
 		*'Service Unavailable'*) return 1 ;;
 		*)
-		    # Extract and number 6 field from json
-		    # IFS=','
-		    # set -- $json
-		    # unset IFS
-		    # for line do
-			# # Define level of object
-			# while c=${line%%"${line#?}"}; do # %% is much efficient than %
-			    # case $c in
-				# '') safe="$safe,${nl}"; break ;;
-				# '{') lv=$((lv + 1)) ;;
-				# '}') lv=$((lv - 1)) ;;
-				# ':') safe="$lv$safe$c" ;; # key step: put $lv before $safe
-				# *) safe="$safe$c" ;;
-			    # esac
-			    # tmplist="$tmplist$safe"
-			    # line=${line#?}
-			    # unset safe
-			# done
-		    # done
-		    # unset lv
-			# Match object and lv
-			# case $safe in
-			#     *3'"indexed"'*) tmplist="$tmplist|" ;;
-			#     *3'"title"'*) tmp=${safe#*[\"}; tmplist="$tmplist${nl}1Title: ${tmp%\"*}" ;;
-			#     *3'"container-title"'*) tmp=${safe#*[\"}; tmplist="$tmplist${nl}4Journal: ${tmp%\"*}" ;;
-			#     *4'"given"'*) tmp=${safe#*:\"}; given="${tmp%\"*}" ;;
-			#     *4'"family"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}5Author(s): $given ${tmp%\"*}" ;;
-			#     *3'"DOI"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}6DOI: ${tmp%\"*}" ;;
-			#     *3'"type"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}2Category: ${tmp%\"*}" ;;
-			#     *43'"published-print"'*'"date-parts"'*) tmp=${safe#*[[}; tmplist="$tmplist${nl}3Date: ${tmp%]]*}" ;;
-			# esac
-			# unset safe
 
-		    # Extract and number 6 field from json
-		    IFS=','
-		    set -- $json
-		    unset IFS
-		    for line do
-			# Define level of object
-			while c=${line%%"${line#?}"}; do # %% is much efficient than %
-			    case $c in
-				'') safe="$safe,"; break ;;
-				'{') lv=$((lv + 1)) ;;
-				'}') lv=$((lv - 1)) ;;
-				':') safe=$lv$safe$c ;; # key step: put $lv before $safe
-				*) safe=$safe$c ;;
-			    esac
-			    line=${line#?}
-			done
-			# Match object and lv
-			case $safe in
-			    *3'"indexed"'*) tmplist="$tmplist|" ;;
-			    *3'"title"'*) tmp=${safe#*[\"}; tmplist="$tmplist${nl}1Title: ${tmp%\"*}" ;;
-			    *3'"container-title"'*) tmp=${safe#*[\"}; tmplist="$tmplist${nl}4Journal: ${tmp%\"*}" ;;
-			    *4'"given"'*) tmp=${safe#*:\"}; given="${tmp%\"*}" ;;
-			    *4'"family"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}5Author(s): $given ${tmp%\"*}" ;;
-			    *3'"DOI"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}6DOI: ${tmp%\"*}" ;;
-			    *3'"type"'*) tmp=${safe#*:\"}; tmplist="$tmplist${nl}2Category: ${tmp%\"*}" ;;
-			    *43'"published-print"'*'"date-parts"'*) tmp=${safe#*[[}; tmplist="$tmplist${nl}3Date: ${tmp%]]*}" ;;
-			esac
-			unset safe
-		    done
-		    unset lv
+		    json_pretty_print "$json" "$@"
+		    json_match "$tmplist" "$@"
 
 		    # Sort each field based on numbering
 		    IFS='|'
-		    set -- $tmplist
+		    set -- $tmp2list
 		    unset IFS
 		    for line do
-			tmp2list="$tmp2list$(printf '%s' "$line" | sort -n)"
+			tmp3list="$tmp3list$(printf '%s' "$line" | sort -n)"
 		    done
 
 		    # Combining authors and Add '|' back to Title
 		    IFS="$nl"
-		    set -- $tmp2list
+		    set -- $tmp3list
 		    unset IFS
 		    for line do
 			case $line in
 			    *'Author(s)'*)
 				case $preline in
-				    *'Author(s)'*) tmp3list="$tmp3list and ${line##*Author(s): }" ;;
-				    *) tmp3list="$tmp3list${nl}${tab}${line#?}" ;;
+				    *'Author(s)'*) tmp4list="$tmp4list and ${line##*Author(s): }" ;;
+				    *) tmp4list="$tmp4list${nl}${tab}${line#?}" ;;
 				esac
 				;;
-			    *'Title'*) tmp3list="$tmp3list${nl}|${line#?}" ;;
-			    *) tmp3list="$tmp3list${nl}${tab}${line#?}" ;;
+			    *'Title'*) tmp4list="$tmp4list${nl}|${line#?}" ;;
+			    *) tmp4list="$tmp4list${nl}${tab}${line#?}" ;;
 			esac
 			preline=$line
 		    done
 
 		    # Add \n if some entry does not have 6 lines
 		    IFS='|'
-		    set -- $tmp3list; shift
+		    set -- $tmp4list; shift
 		    unset IFS
 
 		    # Each item must have totally 6 \n
@@ -508,7 +566,7 @@ ref_search() {
 			esac
 		    done
 		    list=${list#*|}
-		    unset tmplist tmp2list tmp3list
+		    unset tmplist tmp2list tmp3list tmp4list
 		    ;;
 	    esac
     esac
@@ -606,13 +664,17 @@ yesno() {
 }
 
 filter() {
-    format="$2" IFS="$3" str="$4"
+    IFS="$2" str="$3"
     set -- $1
     for line do
-	eval "$format"; tmp2=${tmp##*$str}
-	case $(( ${#tmp} - ${#tmp2} )) in
+	# lower_line="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')"
+	# lower_str="$(printf '%s' "$str" | tr '[:upper:]' '[:lower:]')"
+	# tmp=${lower_line##*"$lower_str"}
+	# case $(( ${#lower_line} - ${#tmp} )) in
+	tmp=${line##*$str}
+	case $(( ${#line} - ${#tmp} )) in
 	    0) shift ;;
-	    *) filter="$filter$IFS$tmp" ;;
+	    *) filter="$filter$IFS$line" ;;
 	esac
     done
     filter=${filter#*$IFS}
@@ -627,13 +689,22 @@ waitclip() {
 	"xsel") clipcmd='xsel -o --clipboard'; xsel -bc ;;
     esac
     count=1 countlimit=3600
-    while [ -z "$bibtex" ] && [ $count -le $countlimit ]; do
+
+    # Allow shell to read keypress and break the loop
+    stty -icanon time 0 min 0
+
+    while [ -z "$bibtex" ] && [ $count -le $countlimit ] && [ "$key" != h ]; do
+	read key
 	set -- "Copy BibTeX within $countlimit second; Already $count second past"
 	num=1 y=1 y2=$top cur=$1 ltype="Copy BibTeX!" msg="Google Scholar Search"
 	redraw 1 "$@"
 	bibtex="$($clipcmd)"
 	sleep 1; count=$((count + 1))
     done
+
+    # restore stty sanity
+    stty sane
+    stty -icanon -echo
 }
 
 key() {
@@ -739,7 +810,13 @@ key() {
 					waitclip "$@"
 					set -- 'Yes' \
 					       'No'
-					yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
+					case $bibtex in
+					    '')
+						set -- $BIB_PDF_PATH/*.pdf
+						restore "$@"
+						;;
+					    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
+					esac
 					;;
 				esac
 				;;
@@ -755,7 +832,7 @@ key() {
 					ans="${ans%%$nl*}"
 
 					case "$ans" in
-					    10\.[0-9][0-9][0-9][0-9]\/[^[:space:][:cntrl:]]*) # match doi
+					    10\.[0-9][0-9][0-9][0-9]\/[[:alnum:].]*) # match doi
 						bibtex=$(curl -s "http://api.crossref.org/works/$ans/transform/application/x-bibtex")
 						set -- 'Yes' \
 						       'No'
@@ -824,7 +901,13 @@ key() {
 				waitclip "$@"
 				set -- 'Yes' \
 				       'No'
-				yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
+				case $bibtex in
+				    '')
+					set -- $BIB_PDF_PATH/*.pdf
+					restore "$@"
+					;;
+				    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
+				esac
 				;;
 			    *)
 				ans=${cur##*: }
@@ -838,6 +921,7 @@ key() {
 				done
 
 				bibtex=$(curl -s "http://api.crossref.org/works/$safeans/transform/application/x-bibtex")
+				unset safeans
 
 				set -- 'Yes' \
 				       'No'
@@ -865,12 +949,15 @@ key() {
 			;;
 		    'p')
 			read -r type < "$cur"
+			file=${cur##*/}
+			basename=${file%%.*}
 			case "$type" in
 			    '%PDF'*) info=$(exiftool $cur) ;;
 			    *) info='PDF file is broken, or not choosing PDF file; press h to leave' ;;
 			esac
 			IFS="$nl"
-			set -- $info
+			set -- $info \
+			       $basename
 			unset IFS
 			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by which information?' token=q token_q=p
 			redraw $num "$@"
@@ -1002,7 +1089,7 @@ key() {
 				    info=$(exiftool "$pdf")
 				    tmp=${info##*Title                           : }
 				    title=${tmp%%$nl*}
-				    filter "$(cat -u $BIB)" 'tmp=$line' '@' "$title"
+				    filter "$(cat -u $BIB)" '@' "$title"
 				    case $filter in
 				        '') faillist="$faillist${nl}$pdf" ;;
 					*)
@@ -1053,6 +1140,11 @@ key() {
 		redraw "$num" "$@"
 	    ;;
 
+	    # R?)
+		# prompt "Sublibrary name: " r
+
+	    # ;;
+
             g?) # token
                 case $y in
                     1) continue ;;
@@ -1094,13 +1186,13 @@ key() {
 		case "$token" in
 		    ''|'p'|'b'|'B')
 			num=1
-			filter "$BIB_PDF_PATH/*.pdf" 'tmp=$line' "$nl" "$ans"
+			filter "$BIB_PDF_PATH/*.pdf" "$nl" "$ans"
 			IFS="$nl"
 			set -- $filter
 			unset IFS filter
 			;;
 		    's'|'c'|'o'|'n')
-			filter "$list" 'tmp=$line' '|' "$ans"
+			filter "$list" '|' "$ans"
 			IFS='|'
 			set -- $filter
 			unset IFS filter
@@ -1109,7 +1201,7 @@ key() {
 			case "$token_q" in
 			    'p'|'sc'|'sg'|'so'|'b'|'B')
 				num=1
-				filter "$info" 'tmp=$line' "$nl" "$ans"
+				filter "$info" "$nl" "$ans"
 				IFS="$nl"
 				set -- $filter
 				unset IFS filter
@@ -1119,10 +1211,7 @@ key() {
 		esac
 
                 case $# in
-                    0)
-			num=1
-			set -- 'no result'
-			;;
+                    0) num=1; set -- 'no result' ;;
                 esac
 
 		y=1 y2=$top cur=$1 ltype= msg="filter by *$ans*"
@@ -1144,6 +1233,8 @@ key() {
 			'o - open PDF file by BibTeX entry' \
 			'b - manually build database by rename and encode metadata into PDF file' \
 			'B - automatically build database by rename and encode metadata into PDF file' \
+			# 'R - create new BibTeX entry sublibrary' \
+			# 'r - open existing BibTeX entry sublibrary' \
 			'n - write notes for BibTeX entry' \
                         '/ - search in $BIB_PDF_PATH/<input>*' \
                         '? - show keybinds'
