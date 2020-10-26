@@ -191,11 +191,11 @@ arg_format() { # token
     case "$token" in
 	's'|'c'|'o'|'n') printf %s "${1%$nl}" ;;
 	'?') printf %s "$1" ;;
-        ''|'p'|'b'|'B') printf %s "${1##*/}" ;;
+        ''|'S'|'b'|'B'|'R'|'r') printf %s "${1##*/}" ;;
 	'q')
 	    case "$token_q" in
-	        ''|'p'|'sc'|'sg'|'so') printf %s "$1" ;;
-		'b'|'B') printf %s "${1%$nl}" ;;
+	        ''|'S'|'sc'|'sg'|'so') printf %s "$1" ;;
+		'b'|'B'|'Rc'|'Re') printf %s "${1%$nl}" ;;
 	    esac
 	    ;;
     esac
@@ -575,59 +575,64 @@ ref_search() {
 ref_gen() {
     tmplist= list=
     IFS="$nl"
-    set -- $(cat -u $BIB)
+    set -- $(cat -u $1)
     unset IFS
-    for line do
-	case $line in
-	    @*)
-		tmp="${line##*\{}"
-		tmplist="$tmplist${nl}|BibTeX: ${tmp%,}"
-		;;
-	    *[[:space:]]title*=*)
-		tmp="${line#*\{}"
-		tmplist="$tmplist${nl}${tab}Title: ${tmp%\}*}"
-		;;
-	    *[[:space:]]author*=*)
-		tmp="${line#*\{}"
-		tmplist="$tmplist${nl}${tab}Author(s): ${tmp%\}*}"
-		;;
-	    *[[:space:]]year*)
-		tmp="${line#*=}"
-		tmp="${tmp#\{}"
-		tmp=${tmp%,}
-		tmp=${tmp%\}}
-		tmplist="$tmplist${nl}${tab}Year: $tmp"
-		;;
-	    *[[:space:]]journal*=*)
-		tmp="${line#*\{}"
-		tmplist="$tmplist${nl}${tab}Journal: ${tmp%\}*}"
-		;;
-	    *[[:space:]]doi*=*)
-		tmp="${line#*\{}"
-		tmplist="$tmplist${nl}${tab}Doi: ${tmp%\}*}"
-	esac
-    done
+    case $# in
+        0) list='no content' ;;
+	*)
+	    for line do
+		case $line in
+		    @*)
+			tmp="${line##*\{}"
+			tmplist="$tmplist${nl}|BibTeX: ${tmp%,}"
+			;;
+		    *[[:space:]]title*=*)
+			tmp="${line#*\{}"
+			tmplist="$tmplist${nl}${tab}Title: ${tmp%\}*}"
+			;;
+		    *[[:space:]]author*=*)
+			tmp="${line#*\{}"
+			tmplist="$tmplist${nl}${tab}Author(s): ${tmp%\}*}"
+			;;
+		    *[[:space:]]year*)
+			tmp="${line#*=}"
+			tmp="${tmp#\{}"
+			tmp=${tmp%,}
+			tmp=${tmp%\}}
+			tmplist="$tmplist${nl}${tab}Year: $tmp"
+			;;
+		    *[[:space:]]journal*=*)
+			tmp="${line#*\{}"
+			tmplist="$tmplist${nl}${tab}Journal: ${tmp%\}*}"
+			;;
+		    *[[:space:]]doi*=*)
+			tmp="${line#*\{}"
+			tmplist="$tmplist${nl}${tab}Doi: ${tmp%\}*}"
+		esac
+	    done
 
-    IFS='|'
-    set -- $tmplist; shift
-    unset IFS
+	    IFS='|'
+	    set -- $tmplist; shift
+	    unset IFS
 
-    for line do
-	case $line in
-	    *${nl}*${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line" ;;
-	    *${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}" ;;
-	    *${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}" ;;
-	    *${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}${nl}" ;;
-	    *${nl}*${nl}) list="$list|$line${nl}${nl}${nl}${nl}" ;;
-	    *${nl}) list="$list|$line${nl}${nl}${nl}${nl}${nl}" ;;
-	    *${nl}*${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}" ;; # match last item
-	    *${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}" ;; # match last item
-	    *${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}" ;; # match last item
-	    *${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}${nl}" ;; # match last item
-	    *${nl}*) list="$list|$line${nl}${nl}${nl}${nl}${nl}" ;; # match last item
-	esac
-    done
-    list=${list#*|}
+	    for line do
+		case $line in
+		    *${nl}*${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line" ;;
+		    *${nl}*${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}" ;;
+		    *${nl}*${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}" ;;
+		    *${nl}*${nl}*${nl}) list="$list|$line${nl}${nl}${nl}" ;;
+		    *${nl}*${nl}) list="$list|$line${nl}${nl}${nl}${nl}" ;;
+		    *${nl}) list="$list|$line${nl}${nl}${nl}${nl}${nl}" ;;
+		    *${nl}*${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}" ;; # match last item
+		    *${nl}*${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}" ;; # match last item
+		    *${nl}*${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}" ;; # match last item
+		    *${nl}*${nl}*) list="$list|$line${nl}${nl}${nl}${nl}" ;; # match last item
+		    *${nl}*) list="$list|$line${nl}${nl}${nl}${nl}${nl}" ;; # match last item
+		esac
+	    done
+	    list=${list#*|}
+		    ;;
+    esac
 }
 
 entry_gen() {
@@ -647,6 +652,7 @@ entry_gen() {
 }
 
 restore() {
+    unset faillist
     num=1 y=1 y2=$top cur=$1 ltype= msg= token=
     term_setup $num
     redraw $num "$@"
@@ -667,18 +673,14 @@ filter() {
     IFS="$2" str="$3"
     set -- $1
     for line do
-	# lower_line="$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')"
-	# lower_str="$(printf '%s' "$str" | tr '[:upper:]' '[:lower:]')"
-	# tmp=${lower_line##*"$lower_str"}
-	# case $(( ${#lower_line} - ${#tmp} )) in
 	tmp=${line##*$str}
 	case $(( ${#line} - ${#tmp} )) in
 	    0) shift ;;
 	    *) filter="$filter$IFS$line" ;;
 	esac
     done
-    filter=${filter#*$IFS}
-    unset IFS
+    filt_out=${filter#*$IFS}
+    unset IFS filter
 }
 
 waitclip() {
@@ -710,55 +712,19 @@ waitclip() {
 key() {
     while key=$(dd ibs=1 count=1 2>/dev/null); do
 	case $key${esc:=0} in
-	    "$ctrl_u"*) # token
-		case "$token" in
-		    's'|'c'|'o'|'n') num=6 ;;
-		    ''|'?'|'p'|'b'|'B') num=1 ;;
-		    'q')
-			case "$token_q" in
-			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
-			    'b'|'B') num=6 ;;
-			esac
-		esac
+	    "$ctrl_u"*)
 		term_page_up $num "$@"
 	    ;;
 
-	    "$ctrl_f"*) # token
-		case "$token" in
-		    's'|'c'|'o'|'n') num=6 ;;
-		    ''|'?'|'p'|'b'|'B') num=1 ;;
-		    'q')
-			case "$token_q" in
-			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
-			    'b'|'B') num=6 ;;
-			esac
-		esac
+	    "$ctrl_f"*)
 		term_page_down $num "$@"
 	    ;;
 
-	    k?|A2) # token
-		case "$token" in
-		    's'|'c'|'o'|'n') num=6 ;;
-		    ''|'?'|'p'|'b'|'B') num=1 ;;
-		    'q')
-			case "$token_q" in
-			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
-			    'b'|'B') num=6 ;;
-			esac
-		esac
+	    k?|A2)
 		term_scroll_up $num "$@"
 	    ;;
 
-            j?|B2) # token
-		case "$token" in
-		    's'|'c'|'o'|'n') num=6 ;;
-		    ''|'?'|'p'|'b'|'B') num=1 ;;
-		    'q')
-			case "$token_q" in
-			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
-			    'b'|'B') num=6 ;;
-			esac
-		esac
+            j?|B2)
 		term_scroll_down $num "$@"
 	    ;;
 
@@ -826,7 +792,7 @@ key() {
 				;;
 			    *)
 				case "$token_q" in
-				    'p')
+				    'S')
 					ans=${cur##* : }
 					ans=${ans##*doi.org/}
 					ans="${ans%%$nl*}"
@@ -890,6 +856,63 @@ key() {
 					esac
 					redraw $num "$@"
 					;;
+				    'Rc')
+					bibkey=${cur%%$nl*}
+					bibkey=${bibkey##*BibTeX: }
+					filter "$(cat -u "$BIB_LIB_PATH/$name.bib")" '@' "$bibkey"
+					case $filt_out in
+					    '')
+						filter "$(cat -u $BIB)" '@' "$bibkey"
+						printf '\n%s\n' "@$filt_out" >> "$BIB_LIB_PATH/$name.bib"
+						msg_append="Add $bibkey; "
+						;;
+					    *)
+						msg_append="$bibkey already added; "
+						;;
+					esac
+
+					ref_gen "$BIB" "$@"
+
+					IFS='|'
+					set -- $list
+					unset IFS
+					num=6 y=1 y2=$top cur=$1 ltype="Create new sublibrary: $name.bib" msg="$msg_append Choose BibTeX entry to add: " token=q token_q=Rc
+					term_setup $num
+					redraw "$num" "$@"
+					;;
+				    'Re')
+					case $cur in
+					    $ADD)
+						ref_gen "$BIB" "$@"
+
+						IFS='|'
+						set -- $list
+						unset IFS
+						num=6 y=1 y2=$top cur=$1 ltype="Edit existing sublibrary: $name.bib" msg="Choose BibTeX entry to add: " token=q token_q=Rc
+						term_setup $num
+						redraw "$num" "$@"
+						;;
+					    $RM)
+						;;
+					    *)
+						ref_gen "$BIB_LIB_PATH/$name.bib" "$@"
+
+						IFS='|'
+						set -- $list
+						unset IFS
+						num=6 y=1 y2=$top cur=$1 ltype="$msg_append Edit existing sublibrary: $name.bib" msg="Choose BibTeX entry to delete: " token=q token_q=Re
+						term_setup $num
+						redraw "$num" "$@"
+
+						bibkey=${cur%%$nl*}
+						bibkey=${bibkey##*BibTeX: }
+						msg_append="$bibkey deleted; "
+						sublib=$(cat -u "$BIB_LIB_PATH/$name.bib")
+						filter "$sublib" '@' "$bibkey"
+						printf '%s' "${sublib%%@$filt_out*}${sublib##*@$filt_out}" > "$BIB_LIB_PATH/$name.bib"
+						;;
+					esac
+					;;
 				esac
 				;;
 			esac
@@ -930,24 +953,24 @@ key() {
 			esac
 			;;
 		    'c')
-			ans=${cur%%$nl*}
-			ans=${ans##*BibTeX: }
+			bibkey=${cur%%$nl*}
+			bibkey=${bibkey##*BibTeX: }
 			case "$clipcopy" in
-			    "pbcopy") printf '%s' "$ans" | pbcopy ;;
-			    "xclip") printf '%s' "$ans" | xclip -selection clipboard ;;
-			    "xsel") printf '%s' "$ans" | xsel --clipboard ;;
+			    "pbcopy") printf '%s' "$bibkey" | pbcopy ;;
+			    "xclip") printf '%s' "$bibkey" | xclip -selection clipboard ;;
+			    "xsel") printf '%s' "$bibkey" | xsel --clipboard ;;
 			esac
-			set -- "$ans has copied to clipboard using $clipcopy; press h to leave"
+			set -- "$bibkey has copied to clipboard using $clipcopy; press h to leave"
 			num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=
 			redraw $num "$@"
 			;;
 		    'o')
-			ans=${cur%%$nl*}
-			ans=${ans##*BibTeX: }
-			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$ans.pdf"
+			bibkey=${cur%%$nl*}
+			bibkey=${bibkey##*BibTeX: }
+			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$bibkey.pdf"
 			redraw "$num" "$@"
 			;;
-		    'p')
+		    'S')
 			read -r type < "$cur"
 			file=${cur##*/}
 			basename=${file%%.*}
@@ -959,13 +982,13 @@ key() {
 			set -- $info \
 			       $basename
 			unset IFS
-			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by which information?' token=q token_q=p
+			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by which information?' token=q token_q=S
 			redraw $num "$@"
 			;;
 		    'b'|'B')
 			filename=$cur
 			unset cur
-			ref_gen "$@"
+			ref_gen "$BIB" "$@"
 
 			IFS='|'
 			set -- $list
@@ -984,6 +1007,57 @@ key() {
 			term_setup $num
 			redraw "$num" "$@"
 			;;
+		    'R')
+			case $cur in
+			    $addlib)
+				prompt "Name for new sublibrary: " r
+				while c=${ans%"${ans#?}"}; do
+				    case $c in
+					'') break ;;
+					[[:space:]]) name=$name\_ ;;
+					*)           name=$name$c ;;
+				    esac
+				    ans=${ans#?}
+				done
+				[ -e "$BIB_LIB_PATH/$name.bib" ] || touch "$BIB_LIB_PATH/$name.bib"
+
+				ref_gen "$BIB" "$@"
+
+				IFS='|'
+				set -- $list
+				unset IFS
+				num=6 y=1 y2=$top cur=$1 ltype="Create new sublibrary $name.bib" msg="Choose BibTeX entry to add:" token=q token_q=Rc
+				term_setup $num
+				redraw "$num" "$@"
+				;;
+			    *)
+				name="${cur##*/}"
+				name="${name%%.*}"
+				ADD="Add new BibTeX entry to $name.bib"
+				DEL="Delete existing BibTeX entry in $name.bib"
+				RM="Remove sublibrary $name.bib"
+				set -- "$ADD" \
+				       "$DEL" \
+				       "$RM"
+				num=1 y=1 y2=$top cur=$1 ltype="Edit existing sublibrary $name.bib" msg="Add or Delete: " token=q token_q=Re
+				term_setup $num
+				redraw "$num" "$@"
+				;;
+			esac
+			;;
+		    'r')
+			name="${cur##*/}"
+			name="${name%%.*}"
+
+			ref_gen "$BIB_LIB_PATH/$name.bib" "$@"
+
+			IFS='|'
+			set -- $list
+			unset IFS
+			num=6 y=1 y2=$top cur=$1 ltype="Open and view sublibrary: $name.bib" msg="Choose BibTeX entry to view: " token=o
+			term_setup $num
+			redraw "$num" "$@"
+			;;
 		    'n')
 			ref=${cur##*BibTeX: }
 			ref=${ref%%$nl*}
@@ -999,6 +1073,8 @@ key() {
 			    }
 			term_setup 1
 			cmd_run "${BIB_OPENER:="${EDITOR:=vi}"}" "$note"
+			redraw 1 "$@"
+			num=6
 			term_setup $num
 			redraw "$num" "$@"
 			;;
@@ -1041,14 +1117,14 @@ key() {
 		redraw $num "$@"
 	    ;;
 
-	    p?)
+	    S?)
 		set -- $BIB_PDF_PATH/*.pdf
-		num=1 y=1 y2=$top cur=$1 ltype= msg='Search by information in PDF' token=p
+		num=1 y=1 y2=$top cur=$1 ltype= msg='Search by information in PDF' token=S
 		redraw $num "$@"
 	    ;;
 
 	    o?)
-		ref_gen "$@"
+		ref_gen "$BIB" "$@"
 
 		IFS='|'
 		set -- $list
@@ -1059,7 +1135,7 @@ key() {
 	    ;;
 
 	    c?)
-		ref_gen "$@"
+		ref_gen "$BIB" "$@"
 
 		IFS='|'
 		set -- $list
@@ -1090,11 +1166,11 @@ key() {
 				    tmp=${info##*Title                           : }
 				    title=${tmp%%$nl*}
 				    filter "$(cat -u $BIB)" '@' "$title"
-				    case $filter in
+				    case $filt_out in
 				        '') faillist="$faillist${nl}$pdf" ;;
 					*)
 					    IFS="$nl"
-					    set -- $filter
+					    set -- $filt_out
 					    unset IFS
 					    for line do
 						case $line in
@@ -1130,7 +1206,8 @@ key() {
 
 	    n?)
 		BIB_NOTE_PATH="$BIB_PDF_PATH/Notes"
-		ref_gen "$@"
+		[ -d "$BIB_NOTE_PATH" ] || mkdir -p "$BIB_NOTE_PATH"
+		ref_gen "$BIB" "$@"
 
 		IFS='|'
 		set -- $list
@@ -1140,40 +1217,37 @@ key() {
 		redraw "$num" "$@"
 	    ;;
 
-	    # R?)
-		# prompt "Sublibrary name: " r
+	    R?)
+		addlib='Create new sublibrary'
+		BIB_LIB_PATH="$BIB_PDF_PATH/Libs"
+		[ -d "$BIB_LIB_PATH" ] || mkdir -p "$BIB_LIB_PATH"
 
-	    # ;;
+		set -- "$addlib" \
+		       $BIB_LIB_PATH/*.bib
+		num=1 y=1 y2=$top cur=$1 ltype="Create new sublibrary / Edit exsting sublibrary" msg="Choose sublibrary: " token=R
+		term_setup $num
+		redraw "$num" "$@"
 
-            g?) # token
+	    ;;
+
+	    r?)
+		BIB_LIB_PATH="$BIB_PDF_PATH/Libs"
+		set -- $BIB_LIB_PATH/*.bib
+		num=1 y=1 y2=$top cur=$1 ltype="Open and view sublibrary" msg="Choose sublibrary: " token=r
+		term_setup $num
+		redraw "$num" "$@"
+	    ;;
+
+            g?)
                 case $y in
                     1) continue ;;
                 esac
 
-		case "$token" in
-		    's'|'c'|'o'|'n') num=6 ;;
-		    ''|'?'|'p'|'b'|'B') num=1 ;;
-		    'q')
-			case "$token_q" in
-			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
-			    'b'|'B') num=6 ;;
-			esac
-		esac
                 y=1 y2=$top cur=$1
 		redraw "$num" "$@"
             ;;
 
-            G?) # token
-		case "$token" in
-		    's'|'c'|'o'|'n') num=6 ;;
-		    ''|'?'|'p'|'b'|'B') num=1 ;;
-		    'q')
-			case "$token_q" in
-			    ''|'p'|'sc'|'sg'|'so') num=1 ;;
-			    'b'|'B') num=6 ;;
-			esac
-			;;
-		esac
+            G?)
 		y=$# pos=$(( num * y - num + top ))
 		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
 		cur_assign "$y" "$@"
@@ -1184,27 +1258,33 @@ key() {
                 prompt / r
 
 		case "$token" in
-		    ''|'p'|'b'|'B')
+		    ''|'S')
 			num=1
 			filter "$BIB_PDF_PATH/*.pdf" "$nl" "$ans"
 			IFS="$nl"
-			set -- $filter
-			unset IFS filter
+			set -- $filt_out
+			unset IFS
 			;;
-		    's'|'c'|'o'|'n')
+		    's'|'c'|'o'|'n'|'b'|'B'|'r')
 			filter "$list" '|' "$ans"
 			IFS='|'
-			set -- $filter
-			unset IFS filter
+			set -- $filt_out
+			unset IFS
 			;;
 		    'q')
 			case "$token_q" in
-			    'p'|'sc'|'sg'|'so'|'b'|'B')
+			    'S'|'sc'|'sg'|'so')
 				num=1
 				filter "$info" "$nl" "$ans"
 				IFS="$nl"
-				set -- $filter
-				unset IFS filter
+				set -- $filt_out
+				unset IFS
+				;;
+			    'b'|'B'|'Rc'|'Re')
+				filter "$list" '|' "$ans"
+				IFS='|'
+				set -- $filt_out
+				unset IFS
 				;;
 			esac
 			;;
@@ -1228,13 +1308,13 @@ key() {
                         'g - go to top' \
                         'G - go to bottom' \
 			's - search online by text' \
-			'p - search online by metadata in PDF file' \
+			'S - search online by metadata in PDF file' \
 			'c - copy BibTeX entry from your $BIB' \
 			'o - open PDF file by BibTeX entry' \
 			'b - manually build database by rename and encode metadata into PDF file' \
 			'B - automatically build database by rename and encode metadata into PDF file' \
-			# 'R - create new BibTeX entry sublibrary' \
-			# 'r - open existing BibTeX entry sublibrary' \
+			'R - create new BibTeX entry sublibrary' \
+			'r - open existing BibTeX entry sublibrary' \
 			'n - write notes for BibTeX entry' \
                         '/ - search in $BIB_PDF_PATH/<input>*' \
                         '? - show keybinds'
