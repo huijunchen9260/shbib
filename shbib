@@ -191,10 +191,10 @@ arg_format() { # token
     case "$token" in
 	's'|'c'|'o'|'n') printf %s "${1%$nl}" ;;
 	'?') printf %s "$1" ;;
-        ''|'S'|'b'|'B'|'R'|'r') printf %s "${1##*/}" ;;
+        ''|'p'|'b'|'B'|'R'|'r') printf %s "${1##*/}" ;;
 	'q')
 	    case "$token_q" in
-	        ''|'S'|'sc'|'sg'|'so') printf %s "$1" ;;
+	        ''|'p'|'sc'|'sg'|'so') printf %s "$1" ;;
 		'b'|'B'|'Rc'|'Re') printf %s "${1%$nl}" ;;
 	    esac
 	    ;;
@@ -494,21 +494,21 @@ json_match() {
 }
 
 ref_search() {
+    to_clip "$ans"
+
     tmplist= list=
     str=$ans url=
-    while c=${str%"${str#?}"}; do
-	case $c in
-	    '') break ;;
-	    [[:space:]]) url=$url\+ ;;
-	    *)           url=$url$c ;;
-	esac
-	str=${str#?}
-    done
+
+    # make space to +
+    set -- $str
+    IFS=+
+    url="$*"
+    unset IFS
 
     case "$url" in
         '') return 2 ;;
 	*)
-	    ltype="Searching..."
+	    ltype="\"$ans\" copied to clipboard by $clipcopy; Searching..."
 	    status_line 'b' "$#"
 	    json=$(curl -s "https://api.crossref.org/works?query=$url")
 	    case "$json" in
@@ -683,6 +683,14 @@ filter() {
     unset IFS filter
 }
 
+to_clip() {
+    case "$clipcopy" in # copy $ans to clipboard
+	"pbcopy") printf '%s' "$1" | pbcopy ;;
+	"xclip") printf '%s' "$1" | xclip -selection clipboard ;;
+	"xsel") printf '%s' "$1" | xsel --clipboard ;;
+    esac
+}
+
 waitclip() {
     unset bibtex clipcmd
     case "$clipcopy" in
@@ -784,6 +792,12 @@ key() {
 					    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
 					esac
 					;;
+				    'Re')
+					rm "$BIB_LIB_PATH/$name.bib"
+					set -- "Delete $name.bib; press h to leave"
+					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
+					redraw $num "$@"
+					;;
 				esac
 				;;
 			    "No")
@@ -792,7 +806,7 @@ key() {
 				;;
 			    *)
 				case "$token_q" in
-				    'S')
+				    'p')
 					ans=${cur##* : }
 					ans=${ans##*doi.org/}
 					ans="${ans%%$nl*}"
@@ -810,7 +824,7 @@ key() {
 						case $? in
 						    1)
 							set -- 'Yes' \
-							      'No'
+  							       'No'
 							yesno "Fail to connect Crossref. Search in Google scholar?" "" 'sg' "$@"
 							;;
 						    0)
@@ -893,8 +907,22 @@ key() {
 						redraw "$num" "$@"
 						;;
 					    $RM)
+						set -- 'Yes' \
+						       'No'
+						yesno "Remove sublibrary: " "Really delete sublibrary $name.bib?" "Re" "$@"
 						;;
 					    *)
+						case $cur in
+						    $DEL) ;;
+						    *)
+							bibkey=${cur%%$nl*}
+							bibkey=${bibkey##*BibTeX: }
+							msg_append="$bibkey deleted; "
+							sublib=$(cat -u "$BIB_LIB_PATH/$name.bib")
+							filter "$sublib" '@' "$bibkey"
+							printf '%s' "${sublib%%@$filt_out*}${sublib##*@$filt_out}" > "$BIB_LIB_PATH/$name.bib"
+							;;
+						esac
 						ref_gen "$BIB_LIB_PATH/$name.bib" "$@"
 
 						IFS='|'
@@ -903,13 +931,6 @@ key() {
 						num=6 y=1 y2=$top cur=$1 ltype="$msg_append Edit existing sublibrary: $name.bib" msg="Choose BibTeX entry to delete: " token=q token_q=Re
 						term_setup $num
 						redraw "$num" "$@"
-
-						bibkey=${cur%%$nl*}
-						bibkey=${bibkey##*BibTeX: }
-						msg_append="$bibkey deleted; "
-						sublib=$(cat -u "$BIB_LIB_PATH/$name.bib")
-						filter "$sublib" '@' "$bibkey"
-						printf '%s' "${sublib%%@$filt_out*}${sublib##*@$filt_out}" > "$BIB_LIB_PATH/$name.bib"
 						;;
 					esac
 					;;
@@ -938,10 +959,9 @@ key() {
 				ans="${ans%%$nl*}"
 				IFS='\'
 				set -- $ans
+				IFS=
+				safeans="$@"
 				unset IFS
-				for line do
-				    safeans="$safeans$line"
-				done
 
 				bibtex=$(curl -s "http://api.crossref.org/works/$safeans/transform/application/x-bibtex")
 				unset safeans
@@ -955,11 +975,7 @@ key() {
 		    'c')
 			bibkey=${cur%%$nl*}
 			bibkey=${bibkey##*BibTeX: }
-			case "$clipcopy" in
-			    "pbcopy") printf '%s' "$bibkey" | pbcopy ;;
-			    "xclip") printf '%s' "$bibkey" | xclip -selection clipboard ;;
-			    "xsel") printf '%s' "$bibkey" | xsel --clipboard ;;
-			esac
+			to_clip "$bibkey"
 			set -- "$bibkey has copied to clipboard using $clipcopy; press h to leave"
 			num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=
 			redraw $num "$@"
@@ -970,7 +986,7 @@ key() {
 			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$bibkey.pdf"
 			redraw "$num" "$@"
 			;;
-		    'S')
+		    'p')
 			read -r type < "$cur"
 			file=${cur##*/}
 			basename=${file%%.*}
@@ -982,7 +998,7 @@ key() {
 			set -- $info \
 			       $basename
 			unset IFS
-			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by which information?' token=q token_q=S
+			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by which information?' token=q token_q=p
 			redraw $num "$@"
 			;;
 		    'b'|'B')
@@ -1011,14 +1027,12 @@ key() {
 			case $cur in
 			    $addlib)
 				prompt "Name for new sublibrary: " r
-				while c=${ans%"${ans#?}"}; do
-				    case $c in
-					'') break ;;
-					[[:space:]]) name=$name\_ ;;
-					*)           name=$name$c ;;
-				    esac
-				    ans=${ans#?}
-				done
+
+				set -- $ans
+				IFS='_'
+				name="$*"
+				unset IFS
+
 				[ -e "$BIB_LIB_PATH/$name.bib" ] || touch "$BIB_LIB_PATH/$name.bib"
 
 				ref_gen "$BIB" "$@"
@@ -1097,6 +1111,7 @@ key() {
 	    s?)
 		gscholar="There is no matching...\\(ㄒoㄒ)/${nl}${tab}Search in Google Scholar!${nl}${nl}${nl}${nl}${nl}"
 		prompt "Search in Crossref: " r
+
 		ref_search "$@"
 		case $? in
 		    2) set -- 'type something'; num=1 cur=$1 ltype="Error!" msg="Error messege: " token= ;;
@@ -1117,10 +1132,26 @@ key() {
 		redraw $num "$@"
 	    ;;
 
-	    S?)
+	    p?)
 		set -- $BIB_PDF_PATH/*.pdf
-		num=1 y=1 y2=$top cur=$1 ltype= msg='Search by information in PDF' token=S
+		num=1 y=1 y2=$top cur=$1 ltype= msg='Search by information in PDF' token=p
 		redraw $num "$@"
+	    ;;
+
+	    w*)
+		prompt "Search in google scholar: " r
+		to_clip "$ans"
+		cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
+		waitclip "$@"
+		set -- 'Yes' \
+		       'No'
+		case $bibtex in
+		    '')
+			set -- $BIB_PDF_PATH/*.pdf
+			restore "$@"
+			;;
+		    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
+		esac
 	    ;;
 
 	    o?)
@@ -1165,28 +1196,33 @@ key() {
 				    info=$(exiftool "$pdf")
 				    tmp=${info##*Title                           : }
 				    title=${tmp%%$nl*}
-				    filter "$(cat -u $BIB)" '@' "$title"
-				    case $filt_out in
+				    case $title in
 				        '') faillist="$faillist${nl}$pdf" ;;
 					*)
-					    IFS="$nl"
-					    set -- $filt_out
-					    unset IFS
-					    for line do
-						case $line in
-						    [[:alpha:]]*{[[:alnum:]_]*,) tmp="${line#*\{}"; label="${tmp%,}" ;;
-						    *[[:space:]]title*=*) tmp="${line#*\{}"; title="${tmp%\}*}" ;;
-						    *[[:space:]]author*=*) tmp="${line#*\{}"; author="${tmp%\}*}" ;;
-						    *[[:space:]]journal*=*) tmp="${line#*\{}"; journal="${tmp%\}*}" ;;
-						    *[[:space:]]doi*=*) tmp="${line#*\{}"; doi="${tmp%\}*}" ;;
-						esac
-						unset tmp
-					    done
-					    exiftool -wm cg -Description="$journal" "$pdf" -overwrite_original 1>/dev/null
-					    exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$pdf" -overwrite_original 1>/dev/null
-					    set -- "$label.pdf updated."
-					    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
-					    redraw $num "$@"
+					    filter "$(cat -u $BIB)" '@' "$title"
+					    case $filt_out in
+						'') faillist="$faillist${nl}$pdf" ;;
+						*)
+						    IFS="$nl"
+						    set -- $filt_out
+						    unset IFS
+						    for line do
+							case $line in
+							    [[:alpha:]]*{[[:alnum:]_]*,) tmp="${line#*\{}"; label="${tmp%,}" ;;
+							    *[[:space:]]title*=*) tmp="${line#*\{}"; title="${tmp%\}*}" ;;
+							    *[[:space:]]author*=*) tmp="${line#*\{}"; author="${tmp%\}*}" ;;
+							    *[[:space:]]journal*=*) tmp="${line#*\{}"; journal="${tmp%\}*}" ;;
+							    *[[:space:]]doi*=*) tmp="${line#*\{}"; doi="${tmp%\}*}" ;;
+							esac
+							unset tmp
+						    done
+						    exiftool -wm cg -Description="$journal" "$pdf" -overwrite_original 1>/dev/null
+						    exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$pdf" -overwrite_original 1>/dev/null
+						    set -- "$label.pdf updated."
+						    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
+						    redraw $num "$@"
+						    ;;
+					    esac
 					    ;;
 				    esac
 				    ;;
@@ -1258,7 +1294,7 @@ key() {
                 prompt / r
 
 		case "$token" in
-		    ''|'S')
+		    ''|'p')
 			num=1
 			filter "$BIB_PDF_PATH/*.pdf" "$nl" "$ans"
 			IFS="$nl"
@@ -1273,7 +1309,7 @@ key() {
 			;;
 		    'q')
 			case "$token_q" in
-			    'S'|'sc'|'sg'|'so')
+			    'p'|'sc'|'sg'|'so')
 				num=1
 				filter "$info" "$nl" "$ans"
 				IFS="$nl"
@@ -1308,7 +1344,8 @@ key() {
                         'g - go to top' \
                         'G - go to bottom' \
 			's - search online by text' \
-			'S - search online by metadata in PDF file' \
+			'p - search online by metadata in PDF file' \
+			'w - search google scholar by text' \
 			'c - copy BibTeX entry from your $BIB' \
 			'o - open PDF file by BibTeX entry' \
 			'b - manually build database by rename and encode metadata into PDF file' \
