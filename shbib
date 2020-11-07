@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Dependency: read, grep, curl, sort, exiftool, xclip/xsel/pbcopy,
+# Dependency: read, grep, curl, sort, pdfinfo, xclip/xsel/pbcopy,
 
 # Variable explain:
 # $y: the current argument
@@ -70,6 +70,18 @@ esc() {
     esac
 }
 
+
+CheckDeps () {
+    for CurDep in "$@"; do
+	command -v "$CurDep" 1> /dev/null 2>&1
+	case $? in
+	    0) ;;
+	    *) printf '%s\n' "ERROR: Dependency $CurDep not met." && Deps="$Deps$CurDep" ;;
+	esac
+    done
+    unset CurDep
+}
+
 get_os() {
     case $OSTYPE in
 	darwin*) BIB_OPENER=open; clipcopy=pbcopy ;;
@@ -88,7 +100,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM l
+    esc DECTCEM h
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -118,7 +130,7 @@ redraw() {
     list_print "$num" "$@"
     status_line 't'
     status_line 'b' "$#"
-    # status_line 'b' "$y2 $pos $num $top $fin"
+    # status_line 'b' "y2:$y2 pos:$pos num:$num top:$top fin:$fin cur:$cur" # DEBUG
 }
 
 list_print() {
@@ -371,7 +383,6 @@ cmd_run() {
     stty -icanon -echo
     hist=2
 }
-
 
 json_pretty_print() {
     unset tmplist
@@ -807,7 +818,7 @@ key() {
 			    *)
 				case "$token_q" in
 				    'p')
-					ans=${cur##* : }
+					ans=${cur##*: }
 					ans=${ans##*doi.org/}
 					ans="${ans%%$nl*}"
 
@@ -842,9 +853,10 @@ key() {
 					;;
 				    'b')
 					entry_gen "$@"
+					mv "$filename" "$label.pdf"
 					# Write journal to Description only if Description not exist
-					exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
-					exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
+					# exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
+					# exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
 					case $? in
 					    0) set -- "Successfully update database; press h to leave" ;;
 					    *) set -- "Fail to update database; press h to leave" ;;
@@ -854,8 +866,9 @@ key() {
 					;;
 				    'B')
 					entry_gen "$@"
-					exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
-					exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
+					mv "$filename" "$label.pdf"
+					# exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
+					# exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
 					case $? in
 					    0) msg="Successfully update database!" ;;
 					    *) msg="Fail to update database ㄒoㄒ" ;;
@@ -991,11 +1004,20 @@ key() {
 			file=${cur##*/}
 			basename=${file%%.*}
 			case "$type" in
-			    '%PDF'*) info=$(exiftool $cur) ;;
+			    # '%PDF'*) info=$(pdftk $cur dump_data) ;;
+			    '%PDF'*)
+				info=$(pdfinfo $cur)
+				tmpdoi=${info##*doi:}
+				doi=${tmpdoi%%${nl}*}
+				tmpDOI=${info##*doi:}
+				DOI=${tmpDOI%%${nl}*}
+				;;
 			    *) info='PDF file is broken, or not choosing PDF file; press h to leave' ;;
 			esac
 			IFS="$nl"
 			set -- $info \
+			       $doi \
+			       $DOI \
 			       $basename
 			unset IFS
 			num=1 y=1 y2=$top cur=$1 ltype= msg='Search by which information?' token=q token_q=p
@@ -1138,7 +1160,7 @@ key() {
 		redraw $num "$@"
 	    ;;
 
-	    w*)
+	    w?)
 		prompt "Search in google scholar: " r
 		to_clip "$ans"
 		cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
@@ -1193,8 +1215,9 @@ key() {
 			    case $? in
 			        0) continue ;;
 				*)
-				    info=$(exiftool "$pdf")
-				    tmp=${info##*Title                           : }
+				    info=$(pdfinfo "$pdf")
+				    # tmp=${info##*Title                           : }
+				    tmp=${info##*Title:          }
 				    title=${tmp%%$nl*}
 				    case $title in
 				        '') faillist="$faillist${nl}$pdf" ;;
@@ -1216,8 +1239,9 @@ key() {
 							esac
 							unset tmp
 						    done
-						    exiftool -wm cg -Description="$journal" "$pdf" -overwrite_original 1>/dev/null
-						    exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$pdf" -overwrite_original 1>/dev/null
+						    mv "$filename" "$label.pdf"
+						    # exiftool -wm cg -Description="$journal" "$pdf" -overwrite_original 1>/dev/null
+						    # exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$pdf" -overwrite_original 1>/dev/null
 						    set -- "$label.pdf updated."
 						    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
 						    redraw $num "$@"
@@ -1392,4 +1416,5 @@ main() {
 nl='
 '
 tab='	'
-main "$@" >/dev/tty
+CheckDeps read grep curl sort pdfinfo
+[ -z $Deps ] && main "$@" >/dev/tty
