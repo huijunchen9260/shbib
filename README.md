@@ -15,7 +15,7 @@ A BibTeX-centric bibliography manager written in POSIX shell
 ## Introduction
 
 The prerequisites for `shbib` is:
-1. Dependencies including `grep`, `curl`, `exiftool`, `xclip/xsel/pbcopy (Mac OS)`
+1. Dependencies including `grep`, `curl`, `pdfinfo`, `xclip/xsel/pbcopy (Mac OS)`
 2. Create two environmental variables: `$BIB` and `$BIB_PDF_PATH`. `$BIB` is the path to your BibTeX file, and `$BIB_PDF_PATH` is the path to your pdf directory. You can add these two variables by modifying the paths and running the following pseudo code in terminal:
 
 ```sh
