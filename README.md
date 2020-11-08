@@ -38,10 +38,14 @@ g - go to top
 G - go to bottom
 s - search online by text
 p - search online by metadata in PDF file
+w - search google scholar by text
 c - copy BibTeX entry from your $BIB
 o - open PDF file by BibTeX entry
 b - manually build database by rename and encode metadata into PDF file
 B - automatically build database by rename and encode metadata into PDF file
+R - create new BibTeX entry sublibrary
+r - open existing BibTeX entry sublibrary
+n - write notes for BibTeX entry
 / - search in $BIB_PDF_PATH/<input>*
 ? - show keybinds
 ```

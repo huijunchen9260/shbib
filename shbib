@@ -100,7 +100,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM h
+    esc DECTCEM l
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -534,7 +534,11 @@ ref_search() {
 		    set -- $tmp2list
 		    unset IFS
 		    for line do
-			tmp3list="$tmp3list$(printf '%s' "$line" | sort -n)"
+			tmp=${line##*1Title:}
+			case $(( ${#line} - ${#tmp} )) in
+			    0) shift ;;
+			    *) tmp3list="$tmp3list$(printf '%s' "$line" | sort -n)" ;;
+			esac
 		    done
 
 		    # Combining authors and Add '|' back to Title
@@ -818,7 +822,7 @@ key() {
 			    *)
 				case "$token_q" in
 				    'p')
-					ans=${cur##*: }
+					ans=${cur##*:          }
 					ans=${ans##*doi.org/}
 					ans="${ans%%$nl*}"
 
