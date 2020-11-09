@@ -385,6 +385,7 @@ cmd_run() {
 }
 
 json_pretty_print() {
+    # only backward looking
     unset tmplist
     IFS=','
     set -- $1
@@ -392,8 +393,6 @@ json_pretty_print() {
     for line do
 	# Define level of object
 	while c=${line%%"${line##?}"}; do # %% is much efficient than %
-	    nline=${line##?}
-	    nc=${nline%%"${nline##?}"} # forward looking
 	    case $c in
 		'')
 		    case $quote in
@@ -403,49 +402,57 @@ json_pretty_print() {
 			    safe="$safe,${nl}$space" ;;
 			10) safe="$safe," ;;
 		    esac
-		    break ;;
+		    break
+		    ;;
 		'{'|'[')
 		    lv=$((lv + 1)); sv=$((lv * 2))
-		    case $nc in
-			'}'|']')
-			    safe="$safe$c"
-			    ;;
-		        *)
+		    case $pre_c in
+			'{'|'[')
 			    space="$(printf %${sv}s)" # space per lv*2
-			    safe="$safe$c${nl}$space"
+			    safe="$safe${nl}$space"
+			    # safe="$safe${nl}$space$c"  # for formal formatting
+			    ;;
+			*)
+			    # safe=$safe$c  # for formal formatting
 			    ;;
 		    esac
 		    ;;
 		'}'|']')
 		    lv=$((lv - 1)); sv=$((lv * 2))
-		    case $nc in
-		        '')
-			    case $pre_c in
-			        '{'|'[')
-				    safe="$safe$c"
-				    ;;
-				*)
-				    space="$(printf %${sv}s)" # space per lv*2
-				    safe="$safe${nl}$space$c"
-				    ;;
-			    esac
+		    case $pre_c in
+			'{'|'[')
+			    # safe="$safe$c"  # for formal formatting
 			    ;;
 			'}'|']')
 			    space="$(printf %${sv}s)" # space per lv*2
-			    safe="$safe${nl}$space$c"
+			    safe="$safe${nl}$space"
+			    # safe="$safe${nl}$space$c"  # for formal formatting
 			    ;;
 			*)
 			    space="$(printf %${sv}s)" # space per lv*2
-			    safe="$safe$c${nl}$space"
+			    safe="$safe${nl}$space"
+			    # safe="$safe${nl}$space$c"  # for formal formatting
 			    ;;
 		    esac
 		    ;;
 		'"')
 		    quote=$(( quote > 5 ? 0 : 10 )) # with-in quote indicator
-		    # safe=$safe$c # for formal formatting
+		    case $pre_c in
+			'{'|'[')
+			    space="$(printf %${sv}s)" # space per lv*2
+			    safe="$safe${nl}$space"
+			    # safe="$safe${nl}$space$c"  # for formal formatting
+			    ;;
+			# *)
+			#     safe=$safe$c
+			#     ;;
+		    esac
 		    ;;
 		*)
-		    safe=$safe$c
+		    case $pre_c in
+			'{'|'[') safe="$safe${nl}$space$c" ;;
+			*) safe=$safe$c ;;
+		    esac
 		    ;;
 	    esac
 	    line=${line##?}
