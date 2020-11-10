@@ -864,7 +864,7 @@ key() {
 					;;
 				    'b')
 					entry_gen "$@"
-					mv "$filename" "$label.pdf"
+					mv "$filename" "$BIB_PDF_PATH/$label.pdf"
 					# Write journal to Description only if Description not exist
 					# exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
 					# exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
@@ -877,7 +877,7 @@ key() {
 					;;
 				    'B')
 					entry_gen "$@"
-					mv "$filename" "$label.pdf"
+					mv "$filename" "$BIB_PDF_PATH/$label.pdf"
 					# exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
 					# exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
 					case $? in
@@ -1227,7 +1227,6 @@ key() {
 			        0) continue ;;
 				*)
 				    info=$(pdfinfo "$pdf")
-				    # tmp=${info##*Title                           : }
 				    tmp=${info##*Title:          }
 				    title=${tmp%%$nl*}
 				    case $title in
@@ -1250,7 +1249,7 @@ key() {
 							esac
 							unset tmp
 						    done
-						    mv "$filename" "$label.pdf"
+						    mv "$filename" "$BIB_PDF_PATH/$label.pdf"
 						    # exiftool -wm cg -Description="$journal" "$pdf" -overwrite_original 1>/dev/null
 						    # exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$pdf" -overwrite_original 1>/dev/null
 						    set -- "$label.pdf updated."
@@ -1330,11 +1329,12 @@ key() {
 
 		case "$token" in
 		    ''|'p')
-			num=1
-			filter "$BIB_PDF_PATH/*.pdf" "$nl" "$ans"
-			IFS="$nl"
-			set -- $filt_out
-			unset IFS
+			# num=1
+			# filter "$BIB_PDF_PATH/*.pdf" "$nl" "$ans"
+			# IFS="$nl"
+			# set -- $filt_out
+			# unset IFS
+			set -- $BIB_PDF_PATH/*$ans*
 			;;
 		    's'|'c'|'o'|'n'|'b'|'B'|'r')
 			filter "$list" '|' "$ans"
@@ -1363,6 +1363,9 @@ key() {
 
                 case $# in
                     0) num=1; set -- 'no result' ;;
+                esac
+                case $1$# in
+                    *$ans*1) set -- 'no result' ;;
                 esac
 
 		y=1 y2=$top cur=$1 ltype= msg="filter by *$ans*"
