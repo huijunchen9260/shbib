@@ -1335,12 +1335,18 @@ key() {
 			# set -- $filt_out
 			# unset IFS
 			set -- $BIB_PDF_PATH/*$ans*
+			case $1$# in
+			    *$ans*1) set -- 'no result' ;;
+			esac
 			;;
 		    's'|'c'|'o'|'n'|'b'|'B'|'r')
 			filter "$list" '|' "$ans"
 			IFS='|'
 			set -- $filt_out
 			unset IFS
+			case $# in
+			    0) num=1; set -- 'no result' ;;
+			esac
 			;;
 		    'q')
 			case "$token_q" in
@@ -1358,15 +1364,12 @@ key() {
 				unset IFS
 				;;
 			esac
+			case $# in
+			    0) num=1; set -- 'no result' ;;
+			esac
 			;;
 		esac
 
-                case $# in
-                    0) num=1; set -- 'no result' ;;
-                esac
-                case $1$# in
-                    *$ans*1) set -- 'no result' ;;
-                esac
 
 		y=1 y2=$top cur=$1 ltype= msg="filter by *$ans*"
                 redraw $num "$@"
