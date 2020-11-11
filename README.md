@@ -32,10 +32,10 @@ k/↑ - up
 j/↓ - down
 l/→ - right
 h/← - left
-Ctrl-f - PageDown
-Ctrl-u - PageUp
-g - go to top
-G - go to bottom
+Ctrl-f/PageDown - PageDown
+Ctrl-u/PageUp - PageUp
+g/Home - go to top
+G/End - go to bottom
 s - search online by text
 p - search online by metadata in PDF file
 w - search google scholar by text
@@ -46,7 +46,9 @@ B - automatically build database by rename and encode metadata into PDF file
 R - create new BibTeX entry sublibrary
 r - open existing BibTeX entry sublibrary
 n - write notes for BibTeX entry
-/ - search in $BIB_PDF_PATH/<input>*
+/ - search the current page
+    - default: case-insensitive search
+    - 1st letter uppercase: case-sensitive search
 ? - show keybinds
 ```
 
@@ -69,3 +71,4 @@ Writing in POSIX shell is an adventure. What you need to do is to force yourself
     tab='	'
     ```
 6. Json file manipulation is also possible by pure POSIX shell. Look into `shbib` for `json_pretty_print` function for detail information.
+7. Case-insensitive search is done by transforming both searching string adn searched item to lower case, then match them together. Hope someone can provide a more elegant way to do so.

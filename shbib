@@ -698,10 +698,19 @@ filter() {
     IFS="$2" str="$3"
     set -- $1
     for line do
-	tmp=${line##*$str}
-	case $(( ${#line} - ${#tmp} )) in
-	    0) shift ;;
-	    *) filter="$filter$IFS$line" ;;
+	case ${str%%"${str##?}"} in
+	    [[:upper:]]) # 1st letter upper case, do case-sensitive filter
+		case $line in
+		    *$str*) filter="$filter$IFS$line" ;;
+		esac
+		;;
+	    *) # o/w, do case-insensitive filter
+		lower_line=$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')
+		lower_str=$(printf '%s' "$str" | tr '[:upper:]' '[:lower:]')
+		case $lower_line in
+		    *$lower_str*) filter="$filter$IFS$line" ;;
+		esac
+		;;
 	esac
     done
     filt_out=${filter#*$IFS}
@@ -1397,7 +1406,9 @@ key() {
 			'R - create new BibTeX entry sublibrary' \
 			'r - open existing BibTeX entry sublibrary' \
 			'n - write notes for BibTeX entry' \
-                        '/ - search in $BIB_PDF_PATH/<input>*' \
+			'/ - search the current page ' \
+			'    - default: case-insensitive search' \
+			'    - 1st letter uppercase: case-sensitive search' \
                         '? - show keybinds'
                 num=1 y=1 y2=$top cur=$1 ltype= msg=keybinds token='?'
                 redraw $num "$@"
