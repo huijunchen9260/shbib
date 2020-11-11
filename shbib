@@ -698,8 +698,8 @@ filter() {
     IFS="$2" str="$3"
     set -- $1
     for line do
-	case ${str%%"${str##?}"} in
-	    [[:upper:]]) # 1st letter upper case, do case-sensitive filter
+	case $str in
+	    *[[:upper:]]*) # contain uppercase, do case-sensitive filter
 		case $line in
 		    *$str*) filter="$filter$IFS$line" ;;
 		esac
@@ -1407,8 +1407,8 @@ key() {
 			'r - open existing BibTeX entry sublibrary' \
 			'n - write notes for BibTeX entry' \
 			'/ - search the current page ' \
-			'    - default: case-insensitive search' \
-			'    - 1st letter uppercase: case-sensitive search' \
+			'    default: case-insensitive search' \
+			'    contain uppercase: case-sensitive search' \
                         '? - show keybinds'
                 num=1 y=1 y2=$top cur=$1 ltype= msg=keybinds token='?'
                 redraw $num "$@"

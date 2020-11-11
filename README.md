@@ -47,8 +47,8 @@ R - create new BibTeX entry sublibrary
 r - open existing BibTeX entry sublibrary
 n - write notes for BibTeX entry
 / - search the current page
-    - default: case-insensitive search
-    - 1st letter uppercase: case-sensitive search
+    default: case-insensitive search
+    contain uppercase: case-sensitive search
 ? - show keybinds
 ```
 
