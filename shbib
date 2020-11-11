@@ -820,7 +820,7 @@ key() {
 					       'No'
 					case $bibtex in
 					    '')
-						set -- $BIB_PDF_PATH/*.pdf
+						set -- $BIB_PDF_PATH/*.*
 						restore "$@"
 						;;
 					    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
@@ -835,7 +835,7 @@ key() {
 				esac
 				;;
 			    "No")
-				set -- $BIB_PDF_PATH/*.pdf
+				set -- $BIB_PDF_PATH/*.*
 				restore "$@"
 				;;
 			    *)
@@ -876,7 +876,9 @@ key() {
 					;;
 				    'b')
 					entry_gen "$@"
-					mv "$filename" "$BIB_PDF_PATH/$label.pdf"
+
+					extension=${filename##*.}
+					mv "$filename" "$BIB_PDF_PATH/$label.$extension"
 					# Write journal to Description only if Description not exist
 					# exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
 					# exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
@@ -889,7 +891,9 @@ key() {
 					;;
 				    'B')
 					entry_gen "$@"
-					mv "$filename" "$BIB_PDF_PATH/$label.pdf"
+
+					extension=${filename##*.}
+					mv "$filename" "$BIB_PDF_PATH/$label.$extension"
 					# exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
 					# exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
 					case $? in
@@ -983,7 +987,7 @@ key() {
 				       'No'
 				case $bibtex in
 				    '')
-					set -- $BIB_PDF_PATH/*.pdf
+					set -- $BIB_PDF_PATH/*.*
 					restore "$@"
 					;;
 				    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
@@ -1019,7 +1023,7 @@ key() {
 		    'o')
 			bibkey=${cur%%$nl*}
 			bibkey=${bibkey##*BibTeX: }
-			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$bibkey.pdf"
+			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$bibkey.*"
 			redraw "$num" "$@"
 			;;
 		    'p')
@@ -1027,12 +1031,11 @@ key() {
 			file=${cur##*/}
 			basename=${file%%.*}
 			case "$type" in
-			    # '%PDF'*) info=$(pdftk $cur dump_data) ;;
 			    '%PDF'*)
 				info=$(pdfinfo $cur)
 				tmpdoi=${info##*doi:}
 				doi=${tmpdoi%%${nl}*}
-				tmpDOI=${info##*doi:}
+				tmpDOI=${info##*DOI:}
 				DOI=${tmpDOI%%${nl}*}
 				;;
 			    *) info='PDF file is broken, or not choosing PDF file; press h to leave' ;;
@@ -1149,7 +1152,7 @@ key() {
             ;;
 
             h?|D2|"$bs_char"?) # ARROW LEFT
-		set -- $BIB_PDF_PATH/*.pdf
+		set -- $BIB_PDF_PATH/*.*
 		restore "$@"
             ;;
 
@@ -1178,7 +1181,7 @@ key() {
 	    ;;
 
 	    p?)
-		set -- $BIB_PDF_PATH/*.pdf
+		set -- $BIB_PDF_PATH/*.*
 		num=1 y=1 y2=$top cur=$1 ltype= msg='Search by information in PDF' token=p
 		redraw $num "$@"
 	    ;;
@@ -1192,7 +1195,7 @@ key() {
 		       'No'
 		case $bibtex in
 		    '')
-			set -- $BIB_PDF_PATH/*.pdf
+			set -- $BIB_PDF_PATH/*.*
 			restore "$@"
 			;;
 		    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
@@ -1222,13 +1225,13 @@ key() {
 	    ;;
 
 	    b?)
-		set -- $BIB_PDF_PATH/*.pdf
+		set -- $BIB_PDF_PATH/*.*
 		num=1 y=1 y2=$top cur=$1 ltype= msg='Choose PDF file to build database: ' token=b
 		redraw $num "$@"
 	    ;;
 
 	    B?)
-		set -- $BIB_PDF_PATH/*.pdf
+		set -- $BIB_PDF_PATH/*.*
 		for pdf do
 		    read -r type < "$pdf"
 		    case "$type" in
@@ -1261,10 +1264,11 @@ key() {
 							esac
 							unset tmp
 						    done
-						    mv "$filename" "$BIB_PDF_PATH/$label.pdf"
+						    extension=${filename##*.}
+						    mv "$filename" "$BIB_PDF_PATH/$label.$extension"
 						    # exiftool -wm cg -Description="$journal" "$pdf" -overwrite_original 1>/dev/null
 						    # exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$pdf" -overwrite_original 1>/dev/null
-						    set -- "$label.pdf updated."
+						    set -- "$label updated."
 						    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
 						    redraw $num "$@"
 						    ;;
@@ -1340,7 +1344,7 @@ key() {
                 prompt / r
 
 		case "$token" in
-		    ''|'p')
+		    ''|'b'|'p')
 			# num=1
 			# filter "$BIB_PDF_PATH/*.pdf" "$nl" "$ans"
 			# IFS="$nl"
@@ -1351,7 +1355,7 @@ key() {
 			    "*$ans*"1) set -- 'no result' ;;
 			esac
 			;;
-		    's'|'c'|'o'|'n'|'b'|'B'|'r')
+		    's'|'c'|'o'|'n'|'B'|'r')
 			filter "$list" '|' "$ans"
 			IFS='|'
 			set -- $filt_out
@@ -1430,7 +1434,7 @@ main() {
     ctrl_f=$(printf '\006')
     ctrl_u=$(printf '\025')
 
-    set -- $BIB_PDF_PATH/*.pdf
+    set -- $BIB_PDF_PATH/*.*
     cur=$1 num=1
     term_resize
     term_setup $num
