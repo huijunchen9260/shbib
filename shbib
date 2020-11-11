@@ -1023,7 +1023,9 @@ key() {
 		    'o')
 			bibkey=${cur%%$nl*}
 			bibkey=${bibkey##*BibTeX: }
-			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$bibkey.*"
+			item=$(printf "$BIB_PDF_PATH/$bibkey"*) # only choose first item matched
+			extension=${item##*.}
+			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$bibkey.$extension"
 			redraw "$num" "$@"
 			;;
 		    'p')
