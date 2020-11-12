@@ -820,8 +820,14 @@ key() {
 					       'No'
 					case $bibtex in
 					    '')
-						set -- $BIB_PDF_PATH/*.*
-						restore "$@"
+						IFS='|'
+						set -- $list \
+						    "$gscholar"
+						unset IFS
+						num=6 y=1 y2=$top cur=$1 ltype="search: $ans" msg="search by text" token=s
+						unset gscholar_indicator
+						term_setup $num
+						redraw $num "$@"
 						;;
 					    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
 					esac
@@ -982,15 +988,24 @@ key() {
 			case $cur in
 			    "$gscholar")
 				cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
+				gscholar_indicator=1
 				waitclip "$@"
-				set -- 'Yes' \
-				       'No'
 				case $bibtex in
 				    '')
-					set -- $BIB_PDF_PATH/*.*
-					restore "$@"
+					IFS='|'
+					set -- $list \
+					    "$gscholar"
+					unset IFS
+					num=6 y=1 y2=$top cur=$1 ltype="search: $ans" msg="search by text" token=s
+					unset gscholar_indicator
+					term_setup $num
+					redraw $num "$@"
 					;;
-				    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
+				    *)
+					set -- 'Yes' \
+					       'No'
+					yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@"
+					;;
 				esac
 				;;
 			    *)
@@ -1003,6 +1018,8 @@ key() {
 				safeans="$@"
 				unset IFS
 
+				ltype="Searching for BibTeX..."
+				status_line 'b' "$#"
 				bibtex=$(curl -s "http://api.crossref.org/works/$safeans/transform/application/x-bibtex")
 				unset safeans
 
@@ -1154,8 +1171,34 @@ key() {
             ;;
 
             h?|D2|"$bs_char"?) # ARROW LEFT
-		set -- $BIB_PDF_PATH/*.*
-		restore "$@"
+		case $token in
+		    's')
+			case $gscholar_indicator in
+			    1) ;;
+			    '')
+				set -- $BIB_PDF_PATH/*.*
+				restore "$@"
+				;;
+			esac
+			;;
+
+		    'q')
+			case $token_q in
+			    'sc'|'sg'|'so')
+				IFS='|'
+				set -- $list \
+				    "$gscholar"
+				unset IFS
+				num=6 y=1 y2=$top cur=$1 ltype="search: $ans" msg="search by text" token=s
+				term_setup $num
+				redraw $num "$@"
+			esac
+			;;
+		    *)
+			set -- $BIB_PDF_PATH/*.*
+			restore "$@"
+			;;
+		esac
             ;;
 
 	    s?)
