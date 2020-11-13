@@ -1430,17 +1430,18 @@ key() {
 
 		case "$token" in
 		    ''|'b'|'p')
-			# num=1
-			# filter "$BIB_PDF_PATH/*.pdf" "$nl" "$ans"
-			# IFS="$nl"
-			# set -- $filt_out
-			# unset IFS
 			set -- $BIB_PDF_PATH/*$ans*
 			case $1$# in
-			    "*$ans*"1) set -- 'no result' ;;
+			    "$BIB_PDF_PATH/*$ans*"1) set -- 'no result' ;;
 			esac
 			;;
-		    's'|'c'|'o'|'n'|'B'|'r')
+		    'r'|'R')
+			set -- $BIB_LIB_PATH/*$ans*
+			case $1$# in
+			    "$BIB_LIB_PATH/*$ans*"1) set -- 'no result' ;;
+			esac
+			;;
+		    's'|'c'|'o'|'n'|'B')
 			filter "$list" '|' "$ans"
 			IFS='|'
 			set -- $filt_out
