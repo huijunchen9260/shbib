@@ -941,6 +941,7 @@ key() {
 					redraw "$num" "$@"
 					;;
 				    'Re')
+					Re_indicator=1
 					case $cur in
 					    $ADD)
 						ref_gen "$BIB" "$@"
@@ -1132,6 +1133,8 @@ key() {
 
 			ref_gen "$BIB_LIB_PATH/$name.bib" "$@"
 
+			r_indicator=1
+
 			IFS='|'
 			set -- $list
 			unset IFS
@@ -1187,11 +1190,48 @@ key() {
 			    'sc'|'sg'|'so')
 				IFS='|'
 				set -- $list \
-				    "$gscholar"
+				       "$gscholar"
 				unset IFS
 				num=6 y=1 y2=$top cur=$1 ltype="search: $ans" msg="search by text" token=s
 				term_setup $num
 				redraw $num "$@"
+				;;
+			    'Rc'|'Re')
+				case $Re_indicator in
+				    1)
+					unset Re_indicator
+					set -- "$ADD" \
+					       "$DEL" \
+					       "$RM"
+					num=1 y=1 y2=$top cur=$1 ltype="Edit existing sublibrary $name.bib" msg="Add or Delete: " token=q token_q=Re
+					term_setup $num
+					redraw "$num" "$@"
+					;;
+				    '')
+					set -- "$addlib" \
+					       $BIB_LIB_PATH/*.bib
+					num=1 y=1 y2=$top cur=$1 ltype="Create new sublibrary / Edit exsting sublibrary" msg="Choose sublibrary: " token=R
+					term_setup $num
+					redraw "$num" "$@"
+					;;
+				esac
+				;;
+			esac
+			;;
+		    'o')
+			case $r_indicator in
+			    1)
+				BIB_LIB_PATH="$BIB_PDF_PATH/Libs"
+				set -- $BIB_LIB_PATH/*.bib
+				num=1 y=1 y2=$top cur=$1 ltype="Open and view sublibrary" msg="Choose sublibrary: " token=r
+				term_setup $num
+				redraw "$num" "$@"
+				;;
+			    '')
+				set -- $BIB_PDF_PATH/*.*
+				restore "$@"
+				unset r_indicator
+				;;
 			esac
 			;;
 		    *)
