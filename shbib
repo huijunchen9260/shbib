@@ -100,7 +100,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM l
+    esc DECTCEM h
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -127,15 +127,16 @@ term_reset() {
 
 redraw() {
     num=$1; shift
-    list_print "$num" "$@"
+    esc ED2
+
     status_line 't'
+    list_print "$num" "$@"
     status_line 'b' "$#"
     # status_line 'b' "y2:$y2 pos:$pos num:$num top:$top fin:$fin cur:$cur" # DEBUG
 }
 
 list_print() {
     num=$1; shift
-    esc ED2
     esc CUP "$top"
 
     i=1
@@ -148,9 +149,9 @@ list_print() {
 	    shift "$((pos >= y2 ? (pos - y2) / num : 0))"
         ;;
 
-        1) # redraw after go-to-parent
-            hist_search "$@"
-            shift "$((y >= fin ? y - mid : 0))"
+        1) # redraw after go back
+            old_reset "$@"
+	    shift "$((pos >= fin ? (pos - y2) / num : 0))"
         ;;
 
         *) # everything else
@@ -373,6 +374,40 @@ prompt() {
     status_line 'b' "($y/$#) $PWD"
 }
 
+input() {
+    esc DECSC
+    esc DECTCEM h
+    esc ED2
+    msg=$1 ltype="Insert mode"
+    printf %s "$2"
+    place=$top
+    esc CUP "$place" "15"
+    status_line 't'
+    status_line 'b' "$#"
+
+    stty -cread icanon echo 1>/dev/null 2>&1
+    read -r label || return 1
+    place=$((place+1))
+    esc CUP "$place" "15"
+    read -r doi || return 1
+    place=$((place+1))
+    esc CUP "$place" "15"
+    read -r year || return 1
+    place=$((place+1))
+    esc CUP "$place" "15"
+    read -r author || return 1
+    place=$((place+1))
+    esc CUP "$place" "15"
+    read -r title || return 1
+    place=$((place+1))
+    esc CUP "$place" "15"
+    read -r journal || return 1
+    stty -icanon -echo
+
+    esc DECRC
+    esc DECTCEM l
+}
+
 cmd_run() {
     stty "$stty"
     esc DECTCEM h
@@ -385,6 +420,11 @@ cmd_run() {
     esc DECAWM l
     stty -icanon -echo
     hist=2
+}
+
+old_reset() {
+    hist=0 j=1
+    y=$old_y y2=$old_y2 pos=$old_pos cur=$old_cur
 }
 
 json_pretty_print() {
@@ -685,6 +725,7 @@ restore() {
 
 yesno() {
     msg=$1 item=$2 token_q=$3 shift 3
+
     num=1 y=1 y2=$top cur=$1 ltype= token=q
     redraw $num "$@"
 
@@ -771,6 +812,16 @@ key() {
 	    ;;
 
             l?|C2|"$esc") # ARROW RIGHT # token
+
+		case "$token" in
+		    'p'|'s'|'R'|'r') old_y=$y old_y2=$y2 old_pos=$pos old_cur=$cur ;;
+		    'q')
+			case "$token_q" in
+			    'p'|'Re'|'Rc') old_y=$y old_y2=$y2 old_pos=$pos old_cur=$cur ;;
+			esac
+			;;
+		esac
+
 		case "$token" in
 		    'q')
 			case "$cur" in
@@ -875,6 +926,7 @@ key() {
 							num=6 y=1 y2=$top cur=$1 ltype="Search: $ans" msg="Search by text" token=s
 							;;
 						esac
+						p_indicator=1
 						term_setup $num
 						redraw $num "$@"
 						;;
@@ -1010,19 +1062,19 @@ key() {
 				esac
 				;;
 			    *)
-				ans=${cur##*: }
-				ans=${ans##*doi.org/}
-				ans="${ans%%$nl*}"
+				doi=${cur##*: }
+				doi=${doi##*doi.org/}
+				doi="${doi%%$nl*}"
 				IFS='\'
-				set -- $ans
+				set -- $doi
 				IFS=
-				safeans="$@"
+				safedoi="$@"
 				unset IFS
 
 				ltype="Searching for BibTeX..."
 				status_line 'b' "$#"
-				bibtex=$(curl -s "http://api.crossref.org/works/$safeans/transform/application/x-bibtex")
-				unset safeans
+				bibtex=$(curl -s "http://api.crossref.org/works/$safedoi/transform/application/x-bibtex")
+				unset safedoi
 
 				set -- 'Yes' \
 				       'No'
@@ -1174,17 +1226,32 @@ key() {
             ;;
 
             h?|D2|"$bs_char"?) # ARROW LEFT
+
 		case $token in
 		    's')
 			case $gscholar_indicator in
-			    1) ;;
 			    '')
-				set -- $BIB_PDF_PATH/*.*
-				restore "$@"
+				case $p_indicator in
+				    1)
+					unset p_indicator
+					IFS="$nl"
+					set -- $info \
+					       $doi \
+					       $DOI \
+					       $basename
+					unset IFS
+					num=1 y=1 y2=$top cur=$1 ltype= msg='Search by which information?' token=q token_q=p
+					hist=1
+					redraw $num "$@"
+					;;
+				    '')
+					set -- $BIB_PDF_PATH/*.*
+					restore "$@"
+					;;
+				esac
 				;;
 			esac
 			;;
-
 		    'q')
 			case $token_q in
 			    'sc'|'sg'|'so')
@@ -1193,6 +1260,7 @@ key() {
 				       "$gscholar"
 				unset IFS
 				num=6 y=1 y2=$top cur=$1 ltype="search: $ans" msg="search by text" token=s
+				hist=1
 				term_setup $num
 				redraw $num "$@"
 				;;
@@ -1204,6 +1272,7 @@ key() {
 					       "$DEL" \
 					       "$RM"
 					num=1 y=1 y2=$top cur=$1 ltype="Edit existing sublibrary $name.bib" msg="Add or Delete: " token=q token_q=Re
+					hist=1
 					term_setup $num
 					redraw "$num" "$@"
 					;;
@@ -1211,26 +1280,32 @@ key() {
 					set -- "$addlib" \
 					       $BIB_LIB_PATH/*.bib
 					num=1 y=1 y2=$top cur=$1 ltype="Create new sublibrary / Edit exsting sublibrary" msg="Choose sublibrary: " token=R
+					hist=1
 					term_setup $num
 					redraw "$num" "$@"
 					;;
 				esac
+				;;
+			    *)
+				set -- $BIB_PDF_PATH/*.*
+				restore "$@"
 				;;
 			esac
 			;;
 		    'o')
 			case $r_indicator in
 			    1)
+				unset r_indicator
 				BIB_LIB_PATH="$BIB_PDF_PATH/Libs"
 				set -- $BIB_LIB_PATH/*.bib
 				num=1 y=1 y2=$top cur=$1 ltype="Open and view sublibrary" msg="Choose sublibrary: " token=r
+				hist=1
 				term_setup $num
 				redraw "$num" "$@"
 				;;
 			    '')
 				set -- $BIB_PDF_PATH/*.*
 				restore "$@"
-				unset r_indicator
 				;;
 			esac
 			;;
@@ -1239,6 +1314,7 @@ key() {
 			restore "$@"
 			;;
 		esac
+
             ;;
 
 	    s?)
@@ -1285,6 +1361,21 @@ key() {
 			;;
 		    *) yesno "Copy bibtex to $BIB?" "$bibtex" 'sc' "$@" ;;
 		esac
+	    ;;
+
+	    e?)
+		bib_form="BibTeX: ${nl}Doi: ${nl}Year: ${nl}Author(s): ${nl}Title: ${nl}Journal:"
+		input "Manually generate bibtex; press enter to insert next field; press Ctrl-C to leave" "$bib_form"
+
+		case $? in
+		    1)
+			set -- $BIB_PDF_PATH/*.*
+			restore "$@"
+			;;
+		    0)
+			;;
+		esac
+
 	    ;;
 
 	    o?)
@@ -1494,8 +1585,11 @@ key() {
 			'b - manually build database by rename and encode metadata into PDF file' \
 			'B - automatically build database by rename and encode metadata into PDF file' \
 			'R - create new BibTeX entry sublibrary' \
+			'    store at: $BIB_PDF_PATH/Libs' \
 			'r - open existing BibTeX entry sublibrary' \
+			'    store at: $BIB_PDF_PATH/Libs' \
 			'n - write notes for BibTeX entry' \
+			'    store at: $BIB_PDF_PATH/Notes' \
 			'/ - search the current page ' \
 			'    default: case-insensitive search' \
 			'    contain uppercase: case-sensitive search' \
