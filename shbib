@@ -731,61 +731,6 @@ meta_to_file() {
     mv "/tmp/$label.$extension" "$BIB_PDF_PATH/$label.$extension"
 }
 
-meta_loop() {
-    set -- $BIB_PDF_PATH/*.*
-    for pdf do
-	read -r type < "$pdf"
-	case "$type" in
-	    '%PDF'*)
-		filename="${pdf##*/}"; basename="${filename%.*}"
-		grep '@' "$BIB" | grep -q "$basename"
-		case $? in
-		    0) continue ;;
-		    *)
-			info=$(pdfinfo "$pdf")
-			tmp=${info##*Title:          }
-			title=${tmp%%$nl*}
-			case $title in
-			    '') faillist="$faillist${nl}$pdf" ;;
-			    *)
-				filter "$(cat -u $BIB)" '@' "$title"
-				case $filt_out in
-				    '') faillist="$faillist${nl}$pdf" ;;
-				    *)
-					IFS="$nl"
-					set -- $filt_out
-					unset IFS
-					for line do
-					    case $line in
-						[[:alpha:]]*{[[:alnum:]_]*,) tmp="${line#*\{}"; label="${tmp%,}" ;;
-						*[[:space:]]title*=*) tmp="${line#*\{}"; title="${tmp%\}*}" ;;
-						*[[:space:]]author*=*) tmp="${line#*\{}"; author="${tmp%\}*}" ;;
-						*[[:space:]]journal*=*) tmp="${line#*\{}"; journal="${tmp%\}*}" ;;
-						*[[:space:]]doi*=*) tmp="${line#*\{}"; doi="${tmp%\}*}" ;;
-					    esac
-					    unset tmp
-					done
-					extension=${filename##*.}
-
-					meta_to_file "$pdf" "$@"
-
-					successlist="$successlist${nl}$label.$extension updated"
-					IFS="$nl"
-					set -- $successlist
-					unset IFS
-					num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
-					redraw $num "$@"
-					;;
-				esac
-				;;
-			esac
-			;;
-		esac
-		;;
-	esac
-    done
-}
-
 restore() {
     unset faillist
     num=1 y=1 y2=$top cur=$1 ltype= msg= token=
@@ -926,16 +871,17 @@ key() {
 					set -- $bibtex
 					for line do
 					    case $line in
+						'@'[[:alpha:]]*{[[:alnum:]_]*,) tmp="${line#*\{}"; label="${tmp%,}" ;;
 						*[[:space:]]url*=*) tmp="${line#*\{}"; url="${tmp%\}*}" ;;
 					    esac
 					done
-					cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "$url" 1>/dev/null &
-					set -- "Open PDF file; press h to leave"
+					"${BIB_OPENER:=${BROWSER:=xdg-open}}" "$BIB_UNI_KEY$url" 1>/dev/null &
+					set -- "Open $label; press h to leave"
 					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
 					redraw $num "$@"
 					;;
 				    'sg')
-					cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
+					"${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
 					waitclip "$@"
 					set -- 'Yes' \
 					       'No'
@@ -1111,7 +1057,7 @@ key() {
 		    's')
 			case $cur in
 			    "$gscholar")
-				cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
+				"${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
 				gscholar_indicator=1
 				waitclip "$@"
 				case $bibtex in
@@ -1290,7 +1236,7 @@ key() {
 		    '')
 			[ -e "$cur" ] &&
 			    {
-				cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$cur"
+				"${BIB_OPENER:="${READER:=xdg-open}"}" "$cur"
 				redraw 1 "$@"
 			    }
 			;;
@@ -1423,7 +1369,7 @@ key() {
 	    w?)
 		prompt "Search in google scholar: " r
 		to_clip "$ans"
-		cmd_run "${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
+		"${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null
 		waitclip "$@"
 		set -- 'Yes' \
 		       'No'
@@ -1480,7 +1426,59 @@ key() {
 	    ;;
 
 	    B?)
-		meta_loop "$@"
+		set -- $BIB_PDF_PATH/*.*
+		for pdf do
+		    read -r type < "$pdf"
+		    case "$type" in
+			'%PDF'*)
+			    filename="${pdf##*/}"; basename="${filename%.*}"
+			    grep '@' "$BIB" | grep -q "$basename"
+			    case $? in
+				0) continue ;;
+				*)
+				    info=$(pdfinfo "$pdf")
+				    tmp=${info##*Title:          }
+				    title=${tmp%%$nl*}
+				    case $title in
+					'') faillist="$faillist${nl}$pdf" ;;
+					*)
+					    filter "$(cat -u $BIB)" '@' "$title"
+					    case $filt_out in
+						'') faillist="$faillist${nl}$pdf" ;;
+						*)
+						    IFS="$nl"
+						    set -- $filt_out
+						    unset IFS
+						    for line do
+							case $line in
+							    [[:alpha:]]*{[[:alnum:]_]*,) tmp="${line#*\{}"; label="${tmp%,}" ;;
+							    *[[:space:]]title*=*) tmp="${line#*\{}"; title="${tmp%\}*}" ;;
+							    *[[:space:]]author*=*) tmp="${line#*\{}"; author="${tmp%\}*}" ;;
+							    *[[:space:]]journal*=*) tmp="${line#*\{}"; journal="${tmp%\}*}" ;;
+							    *[[:space:]]doi*=*) tmp="${line#*\{}"; doi="${tmp%\}*}" ;;
+							esac
+							unset tmp
+						    done
+						    extension=${filename##*.}
+
+						    meta_to_file "$pdf" "$@"
+
+						    successlist="$successlist${nl}$label.$extension updated"
+						    IFS="$nl"
+						    set -- $successlist
+						    unset IFS
+						    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
+						    redraw $num "$@"
+						    sleep 2
+						    ;;
+					    esac
+					    ;;
+				    esac
+				    ;;
+			    esac
+			    ;;
+		    esac
+		done
 
 		IFS="$nl"
 		set -- $faillist
