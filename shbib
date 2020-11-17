@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Dependency: read, grep, curl, sort, pdfinfo, xclip/xsel/pbcopy,
+# Dependency: read, grep, curl, sort, pdfinfo, gs, xclip/xsel/pbcopy,
 
 # Variable explain:
 # $y: the current argument
@@ -178,7 +178,7 @@ list_print() {
     esc CUP "$(( pos > y2 ? y2 : pos ))"
 }
 
-cur_assign(){ # assign $cur > 9
+cur_assign() { # assign $cur > 9
     shift "$1"
     cur=$1
 }
@@ -716,6 +716,76 @@ entry_gen() {
     done
 }
 
+meta_to_file() {
+    file=$1; shift
+
+    gs -o "/tmp/$label.$extension" \
+       -sDEVICE=pdfwrite \
+       -f $pdf   \
+       -c "[ /Title ($title)
+	     /Author ($author)
+	     /Subject ($journal doi:$doi)
+	   /DOCINFO pdfmark" 1>/dev/null 2>&1
+
+    rm $file
+    mv "/tmp/$label.$extension" "$BIB_PDF_PATH/$label.$extension"
+}
+
+meta_loop() {
+    set -- $BIB_PDF_PATH/*.*
+    for pdf do
+	read -r type < "$pdf"
+	case "$type" in
+	    '%PDF'*)
+		filename="${pdf##*/}"; basename="${filename%.*}"
+		grep '@' "$BIB" | grep -q "$basename"
+		case $? in
+		    0) continue ;;
+		    *)
+			info=$(pdfinfo "$pdf")
+			tmp=${info##*Title:          }
+			title=${tmp%%$nl*}
+			case $title in
+			    '') faillist="$faillist${nl}$pdf" ;;
+			    *)
+				filter "$(cat -u $BIB)" '@' "$title"
+				case $filt_out in
+				    '') faillist="$faillist${nl}$pdf" ;;
+				    *)
+					IFS="$nl"
+					set -- $filt_out
+					unset IFS
+					for line do
+					    case $line in
+						[[:alpha:]]*{[[:alnum:]_]*,) tmp="${line#*\{}"; label="${tmp%,}" ;;
+						*[[:space:]]title*=*) tmp="${line#*\{}"; title="${tmp%\}*}" ;;
+						*[[:space:]]author*=*) tmp="${line#*\{}"; author="${tmp%\}*}" ;;
+						*[[:space:]]journal*=*) tmp="${line#*\{}"; journal="${tmp%\}*}" ;;
+						*[[:space:]]doi*=*) tmp="${line#*\{}"; doi="${tmp%\}*}" ;;
+					    esac
+					    unset tmp
+					done
+					extension=${filename##*.}
+
+					meta_to_file "$pdf" "$@"
+
+					successlist="$successlist${nl}$label.$extension updated"
+					IFS="$nl"
+					set -- $successlist
+					unset IFS
+					num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
+					redraw $num "$@"
+					;;
+				esac
+				;;
+			esac
+			;;
+		esac
+		;;
+	esac
+    done
+}
+
 restore() {
     unset faillist
     num=1 y=1 y2=$top cur=$1 ltype= msg= token=
@@ -936,14 +1006,14 @@ key() {
 					entry_gen "$@"
 
 					extension=${filename##*.}
-					mv "$filename" "$BIB_PDF_PATH/$label.$extension"
-					# Write journal to Description only if Description not exist
-					# exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
-					# exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
+
+					meta_to_file "$filename" "$@"
+
 					case $? in
 					    0) set -- "Successfully update database; press h to leave" ;;
 					    *) set -- "Fail to update database; press h to leave" ;;
 					esac
+
 					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
 					redraw $num "$@"
 					;;
@@ -951,13 +1021,14 @@ key() {
 					entry_gen "$@"
 
 					extension=${filename##*.}
-					mv "$filename" "$BIB_PDF_PATH/$label.$extension"
-					# exiftool -wm cg -Description="$journal" "$filename" -overwrite_original 1>/dev/null
-					# exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$filename" -overwrite_original 1>/dev/null
+
+					meta_to_file "$filename" "$@"
+
 					case $? in
 					    0) msg="Successfully update database!" ;;
 					    *) msg="Fail to update database ㄒoㄒ" ;;
 					esac
+
 					faillist="${faillist#*"$filename"}${nl}${faillist%%"$filename"*}"
 					IFS="$nl"
 					set -- $faillist
@@ -1180,6 +1251,7 @@ key() {
 			esac
 			;;
 		    'r')
+
 			name="${cur##*/}"
 			name="${name%%.*}"
 
@@ -1193,6 +1265,7 @@ key() {
 			num=6 y=1 y2=$top cur=$1 ltype="Open and view sublibrary: $name.bib" msg="Choose BibTeX entry to view: " token=o
 			term_setup $num
 			redraw "$num" "$@"
+
 			;;
 		    'n')
 			ref=${cur##*BibTeX: }
@@ -1407,55 +1480,8 @@ key() {
 	    ;;
 
 	    B?)
-		set -- $BIB_PDF_PATH/*.*
-		for pdf do
-		    read -r type < "$pdf"
-		    case "$type" in
-		        '%PDF'*)
-			    TMP="${pdf##*/}"; basename="${TMP%.*}"
-			    grep '@' "$BIB" | grep -q "$basename"
-			    case $? in
-			        0) continue ;;
-				*)
-				    info=$(pdfinfo "$pdf")
-				    tmp=${info##*Title:          }
-				    title=${tmp%%$nl*}
-				    case $title in
-				        '') faillist="$faillist${nl}$pdf" ;;
-					*)
-					    filter "$(cat -u $BIB)" '@' "$title"
-					    case $filt_out in
-						'') faillist="$faillist${nl}$pdf" ;;
-						*)
-						    IFS="$nl"
-						    set -- $filt_out
-						    unset IFS
-						    for line do
-							case $line in
-							    [[:alpha:]]*{[[:alnum:]_]*,) tmp="${line#*\{}"; label="${tmp%,}" ;;
-							    *[[:space:]]title*=*) tmp="${line#*\{}"; title="${tmp%\}*}" ;;
-							    *[[:space:]]author*=*) tmp="${line#*\{}"; author="${tmp%\}*}" ;;
-							    *[[:space:]]journal*=*) tmp="${line#*\{}"; journal="${tmp%\}*}" ;;
-							    *[[:space:]]doi*=*) tmp="${line#*\{}"; doi="${tmp%\}*}" ;;
-							esac
-							unset tmp
-						    done
-						    extension=${filename##*.}
-						    mv "$filename" "$BIB_PDF_PATH/$label.$extension"
-						    # exiftool -wm cg -Description="$journal" "$pdf" -overwrite_original 1>/dev/null
-						    # exiftool -Title="$title" -Author="$author" -doi="$doi" -filename="$label.pdf" "$pdf" -overwrite_original 1>/dev/null
-						    set -- "$label updated."
-						    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
-						    redraw $num "$@"
-						    ;;
-					    esac
-					    ;;
-				    esac
-				    ;;
-			    esac
-			    ;;
-		    esac
-		done
+		meta_loop "$@"
+
 		IFS="$nl"
 		set -- $faillist
 		unset IFS
@@ -1632,5 +1658,5 @@ main() {
 nl='
 '
 tab='	'
-CheckDeps read grep curl sort pdfinfo
+CheckDeps read grep curl sort pdfinfo gs
 [ -z $Deps ] && main "$@" >/dev/tty
