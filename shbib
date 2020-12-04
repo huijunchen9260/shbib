@@ -13,36 +13,49 @@
 
 
 # Adjust tex template to your like
+# Template go between 'EOF' chunck.
 tex_template() {
-    printf '%s\n' \
-	'\documentclass[a4paper]{article}' \
-	'% Beamer' \
-	'% \documentclass{beamer}' \
-	'% \usefonttheme[onlymath]{serif}' \
-	'% \usetheme{metropolis}' \
-	'' \
-	'\usepackage[utf8]{inputenc}' \
-	'\usepackage[T1]{fontenc}' \
-	'\usepackage{textcomp}' \
-	'\usepackage{amsmath, amssymb, amsthm}' \
-	'\usepackage{import}' \
-	'\usepackage{pdfpages}' \
-	'\usepackage{transparent}' \
-	'\usepackage{xcolor}' \
-	'\newcommand{\inkfig}[2][1]{%' \
-	'    \def\svgwidth{#1\columnwidth}' \
-	'    \import{./figures/}{#2.pdf_tex}' \
-	'}' \
-	'\pdfsuppresswarningpagegroup=1' \
-	"\\title{Note on \"$title\"}" \
-	"\\author{Author(s): $author}" \
-	'\date{\today}' \
-	'\begin{document}' \
-	'\maketitle' \
-	'' \
-	'' \
-	'' \
-	'\end{document}' > "$note"
+
+	while read -r CurLine; do
+	    printf '%s\n' "$CurLine" >> "$note"
+	done <<- EOF
+	    \documentclass[a4paper]{article}
+	    \usepackage[a4paper, margin=1in]{geometry}
+	    % Beamer:
+	    % \documentclass{beamer}
+	    % \usefonttheme[onlymath]{serif}
+	    % \usetheme{metropolis}
+
+	    % bibliogrpahy:
+	    \usepackage[style=authoryear,maxbibnames=9,maxcitenames=2,uniquelist=false, backend=biber]{biblatex}
+	    \addbibresource{$(echo $BIB)}
+
+	    % \openup 1em % double spacing
+	    \usepackage[utf8]{inputenc}
+	    \usepackage[T1]{fontenc}
+	    \usepackage{textcomp}
+	    \usepackage{amsmath, amssymb, amsthm}
+	    \usepackage{import}
+	    \usepackage{pdfpages}
+	    \usepackage{transparent}
+	    \usepackage{xcolor}
+	    \newcommand{\inkfig}[2][1]{%
+	      \def\svgwidth{#1\columnwidth}
+	      \import{./figures/}{#2.pdf_tex}
+	    }
+	    \pdfsuppresswarningpagegroup=1
+	    \title{Note on "$title"}
+	    \author{Author(s): $author}
+	    \date{\today}
+	    \begin{document}
+	    \maketitle
+
+
+
+	    \printbibliography
+	    \end{document}
+	EOF
+
 }
 
 # Stolen from shfm
@@ -100,7 +113,7 @@ term_setup() {
     stty -icanon -echo
     esc screen_alt h
     esc DECAWM l
-    esc DECTCEM h
+    esc DECTCEM l
     esc ED2
     esc DECSTBM "$top" "$fin"
 }
@@ -203,7 +216,7 @@ arg_format() { # token
     esc EL0
     case "$token" in
 	's'|'c'|'o'|'n') printf %s "${1%$nl}" ;;
-	'?') printf %s "$1" ;;
+	'?'|'e') printf %s "$1" ;;
         ''|'p'|'b'|'B'|'R'|'r') printf %s "${1##*/}" ;;
 	'q')
 	    case "$token_q" in
@@ -378,6 +391,7 @@ input() {
     esc DECSC
     esc DECTCEM h
     esc ED2
+    esc CUP "$top"
     msg=$1 ltype="Insert mode"
     printf %s "$2"
     place=$top
@@ -390,6 +404,9 @@ input() {
     place=$((place+1))
     esc CUP "$place" "15"
     read -r doi || return 1
+    place=$((place+1))
+    esc CUP "$place" "15"
+    read -r url || return 1
     place=$((place+1))
     esc CUP "$place" "15"
     read -r year || return 1
@@ -406,6 +423,10 @@ input() {
 
     esc DECRC
     esc DECTCEM l
+}
+
+bib_gen () {
+    bibtex="@"
 }
 
 cmd_run() {
@@ -717,17 +738,17 @@ entry_gen() {
 }
 
 meta_to_file() {
-    file=$1; shift
+    file="$1"; shift
 
     gs -o "/tmp/$label.$extension" \
        -sDEVICE=pdfwrite \
-       -f $pdf   \
+       -f "$file"   \
        -c "[ /Title ($title)
 	     /Author ($author)
 	     /Subject ($journal doi:$doi)
 	   /DOCINFO pdfmark" 1>/dev/null 2>&1
 
-    rm $file
+    rm "$file"
     mv "/tmp/$label.$extension" "$BIB_PDF_PATH/$label.$extension"
 }
 
@@ -750,7 +771,7 @@ yesno() {
     esc DECRC
 }
 
-filter() {
+search() {
     IFS="$2" str="$3"
     set -- $1
     for line do
@@ -881,7 +902,7 @@ key() {
 					redraw $num "$@"
 					;;
 				    'sg')
-					"${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
+					"${BIB_OPENER:=${BROWSER:=xdg-open}}" "${BIB_UNI_KEY}https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
 					waitclip "$@"
 					set -- 'Yes' \
 					       'No'
@@ -988,15 +1009,15 @@ key() {
 				    'Rc')
 					bibkey=${cur%%$nl*}
 					bibkey=${bibkey##*BibTeX: }
-					filter "$(cat -u "$BIB_LIB_PATH/$name.bib")" '@' "$bibkey"
+					search "$(cat -u "$BIB_LIB_PATH/$name.bib")" '@' "$bibkey"
 					case $filt_out in
 					    '')
-						filter "$(cat -u $BIB)" '@' "$bibkey"
+						search "$(cat -u $BIB)" '@' "$bibkey"
 						printf '\n%s\n' "@$filt_out" >> "$BIB_LIB_PATH/$name.bib"
-						msg_append="Add $bibkey; "
+						msg_append="Add $bibkey;"
 						;;
 					    *)
-						msg_append="$bibkey already added; "
+						msg_append="$bibkey already added;"
 						;;
 					esac
 
@@ -1010,7 +1031,6 @@ key() {
 					redraw "$num" "$@"
 					;;
 				    'Re')
-					Re_indicator=1
 					case $cur in
 					    $ADD)
 						ref_gen "$BIB" "$@"
@@ -1033,10 +1053,17 @@ key() {
 						    *)
 							bibkey=${cur%%$nl*}
 							bibkey=${bibkey##*BibTeX: }
-							msg_append="$bibkey deleted; "
 							sublib=$(cat -u "$BIB_LIB_PATH/$name.bib")
-							filter "$sublib" '@' "$bibkey"
-							printf '%s' "${sublib%%@$filt_out*}${sublib##*@$filt_out}" > "$BIB_LIB_PATH/$name.bib"
+							search "$sublib" '@' "$bibkey"
+							case "$filt_out" in
+							    '')
+								msg_append="Cannot find $bibkey; "
+								;;
+							    *)
+								printf '%s' "${sublib%%@$filt_out*}${sublib##*@$filt_out}" > "$BIB_LIB_PATH/$name.bib"
+								msg_append="$bibkey deleted; "
+								;;
+							esac
 							;;
 						esac
 						ref_gen "$BIB_LIB_PATH/$name.bib" "$@"
@@ -1044,7 +1071,7 @@ key() {
 						IFS='|'
 						set -- $list
 						unset IFS
-						num=6 y=1 y2=$top cur=$1 ltype="$msg_append Edit existing sublibrary: $name.bib" msg="Choose BibTeX entry to delete: " token=q token_q=Re
+						num=6 y=1 y2=$top cur=$1 ltype="Edit existing sublibrary: $name.bib" msg="$msg_append Choose BibTeX entry to delete: " token=q token_q=Re
 						term_setup $num
 						redraw "$num" "$@"
 						;;
@@ -1057,7 +1084,7 @@ key() {
 		    's')
 			case $cur in
 			    "$gscholar")
-				"${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
+				"${BIB_OPENER:=${BROWSER:=xdg-open}}" "${BIB_UNI_KEY}https://scholar.google.com/scholar?&q=$ans" 1>/dev/null &
 				gscholar_indicator=1
 				waitclip "$@"
 				case $bibtex in
@@ -1085,7 +1112,7 @@ key() {
 				IFS='\'
 				set -- $doi
 				IFS=
-				safedoi="$@"
+				safedoi=$*
 				unset IFS
 
 				ltype="Searching for BibTeX..."
@@ -1233,6 +1260,26 @@ key() {
 			term_setup $num
 			redraw "$num" "$@"
 			;;
+		    'e')
+			category="$cur"
+			bib_form="BibTeX: ${nl}Doi: ${nl}URL: ${nl}Year: ${nl}Author(s): ${nl}Title: ${nl}Journal:"
+			input "Manually generate bibtex; press enter to insert next field; press Ctrl-C to leave" "$bib_form"
+
+			case $? in
+			    1)
+				unset category label doi url year author title journal
+				set -- $BIB_PDF_PATH/*.*
+				restore "$@"
+				;;
+			    0)
+				bibtex="@$category{$label,${nl}${tab}doi = {$doi},${nl}${tab}url = {$url},${nl}${tab}year = $year,${nl}${tab}author = {$author},${nl}${tab}title = {$title},${nl}${tab}journal = {$journal}${nl}}"
+				set -- 'Yes' \
+				       'No'
+				yesno "Input bibtex to $BIB?" "$bibtex" 'sc' "$@"
+				;;
+			esac
+
+			;;
 		    '')
 			[ -e "$cur" ] &&
 			    {
@@ -1284,26 +1331,12 @@ key() {
 				redraw $num "$@"
 				;;
 			    'Rc'|'Re')
-				case $Re_indicator in
-				    1)
-					unset Re_indicator
-					set -- "$ADD" \
-					       "$DEL" \
-					       "$RM"
-					num=1 y=1 y2=$top cur=$1 ltype="Edit existing sublibrary $name.bib" msg="Add or Delete: " token=q token_q=Re
-					hist=1
-					term_setup $num
-					redraw "$num" "$@"
-					;;
-				    '')
-					set -- "$addlib" \
-					       $BIB_LIB_PATH/*.bib
-					num=1 y=1 y2=$top cur=$1 ltype="Create new sublibrary / Edit exsting sublibrary" msg="Choose sublibrary: " token=R
-					hist=1
-					term_setup $num
-					redraw "$num" "$@"
-					;;
-				esac
+				set -- "$addlib" \
+				       $BIB_LIB_PATH/*.bib
+				num=1 y=1 y2=$top cur=$1 ltype="Create new sublibrary / Edit exsting sublibrary" msg="Choose sublibrary: " token=R
+				hist=1
+				term_setup $num
+				redraw "$num" "$@"
 				;;
 			    *)
 				set -- $BIB_PDF_PATH/*.*
@@ -1369,7 +1402,7 @@ key() {
 	    w?)
 		prompt "Search in google scholar: " r
 		to_clip "$ans"
-		"${BIB_OPENER:=${BROWSER:=xdg-open}}" "https://scholar.google.com/scholar?&q=$ans" 1>/dev/null
+		"${BIB_OPENER:=${BROWSER:=xdg-open}}" "${BIB_UNI_KEY}https://scholar.google.com/scholar?&q=$ans" 1>/dev/null
 		waitclip "$@"
 		set -- 'Yes' \
 		       'No'
@@ -1383,17 +1416,22 @@ key() {
 	    ;;
 
 	    e?)
-		bib_form="BibTeX: ${nl}Doi: ${nl}Year: ${nl}Author(s): ${nl}Title: ${nl}Journal:"
-		input "Manually generate bibtex; press enter to insert next field; press Ctrl-C to leave" "$bib_form"
-
-		case $? in
-		    1)
-			set -- $BIB_PDF_PATH/*.*
-			restore "$@"
-			;;
-		    0)
-			;;
-		esac
+		set -- 'article' \
+		       'book' \
+		       'booklet' \
+		       'inbook' \
+		       'incollection' \
+		       'inproceedings' \
+		       'manual' \
+		       'mastersthesis' \
+		       'misc' \
+		       'phdthesis' \
+		       'proceedings' \
+		       'techreport' \
+		       'unpublished' \
+		       'online'
+		num=1 y=1 y2=$top cur=$1 ltype='Establish new BibTeX entry' msg='Choose entry category: ' token=e
+		redraw $num "$@"
 
 	    ;;
 
@@ -1442,7 +1480,7 @@ key() {
 				    case $title in
 					'') faillist="$faillist${nl}$pdf" ;;
 					*)
-					    filter "$(cat -u $BIB)" '@' "$title"
+					    search "$(cat -u $BIB)" '@' "$title"
 					    case $filt_out in
 						'') faillist="$faillist${nl}$pdf" ;;
 						*)
@@ -1469,7 +1507,6 @@ key() {
 						    unset IFS
 						    num=1 y=1 y2=$top cur=$1 ltype="Building database, Automode!" msg="Automode Result: "
 						    redraw $num "$@"
-						    sleep 2
 						    ;;
 					    esac
 					    ;;
@@ -1556,8 +1593,8 @@ key() {
 			    "$BIB_LIB_PATH/*$ans*"1) set -- 'no result' ;;
 			esac
 			;;
-		    's'|'c'|'o'|'n'|'B')
-			filter "$list" '|' "$ans"
+		    's'|'c'|'o'|'n'|'B'|'e')
+			search "$list" '|' "$ans"
 			IFS='|'
 			set -- $filt_out
 			unset IFS
@@ -1569,13 +1606,13 @@ key() {
 			case "$token_q" in
 			    'p'|'sc'|'sg'|'so')
 				num=1
-				filter "$info" "$nl" "$ans"
+				search "$info" "$nl" "$ans"
 				IFS="$nl"
 				set -- $filt_out
 				unset IFS
 				;;
 			    'b'|'B'|'Rc'|'Re')
-				filter "$list" '|' "$ans"
+				search "$list" '|' "$ans"
 				IFS='|'
 				set -- $filt_out
 				unset IFS
@@ -1588,7 +1625,7 @@ key() {
 		esac
 
 
-		y=1 y2=$top cur=$1 ltype= msg="filter by *$ans*"
+		y=1 y2=$top cur=$1 ltype= msg="search by *$ans*"
                 redraw $num "$@"
             ;;
 
@@ -1606,6 +1643,7 @@ key() {
 			'w - search google scholar by text' \
 			'c - copy BibTeX entry from your $BIB' \
 			'o - open PDF file by BibTeX entry' \
+			'e - establish new BibTeX entry by editing ' \
 			'b - manually build database by rename and encode metadata into PDF file' \
 			'B - automatically build database by rename and encode metadata into PDF file' \
 			'R - create new BibTeX entry sublibrary' \
