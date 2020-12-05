@@ -2,25 +2,43 @@
 
 A BibTeX-centric bibliography manager written in POSIX shell
 
-## Table of Content
+- Minimal (*only require **POSIX compliant shell***)
+- Search BibTeX on **crossref** and **google scholar** (Key press: `s`, `p`, `w`)
+- Create and modify bib file on the fly (Key press: `i`, `e`)
+- Automatically and manually *rename* and *encode metadata* to pdf file (Key press: `B`, `b`)
+- Create and view sublibrary (Key press: `R`, `r`)
+- Write notes for BibTeX entry
 
+## Table of Content
 
 <!-- vim-markdown-toc GFM -->
 
+* [Preview](#preview)
 * [Introduction](#introduction)
 * [Dev's note](#devs-note)
 
 <!-- vim-markdown-toc -->
 
+## Preview
+
+Search function:
+
+[![asciicast](https://asciinema.org/a/dAqUiKCVwkxcS0vNUyqd8fVnP.png)](https://asciinema.org/a/dAqUiKCVwkxcS0vNUyqd8fVnP)
+
+Note function:
+
+[![asciicast](https://asciinema.org/a/JLILWWhC0PaAiEL69dTRbhlb0.png)](https://asciinema.org/a/JLILWWhC0PaAiEL69dTRbhlb0)
+
 ## Introduction
 
 The prerequisites for `shbib` is:
-1. Dependencies including `grep`, `curl`, `pdfinfo`, `xclip/xsel/pbcopy (Mac OS)`
-2. Create two environmental variables: `$BIB` and `$BIB_PDF_PATH`. `$BIB` is the path to your BibTeX file, and `$BIB_PDF_PATH` is the path to your pdf directory. You can add these two variables by modifying the paths and running the following pseudo code in terminal:
+1. Dependencies including `read`, `curl`, `sort`, `pdfinfo`, `gs`, `grep`, `curl`, `pdfinfo`, `xclip/xsel/pbcopy (Mac OS)`
+2. Create two environmental variables: `$BIB` and `$BIB_PDF_PATH`. `$BIB` is the path to your BibTeX file, and `$BIB_PDF_PATH` is the path to your pdf directory. You can add these three variables by modifying the paths and running the following pseudo code in terminal:
 
 ```sh
 printf '%s\n' "export BIB='path/to/your/BibTeX/file'" >> $HOME/.profile
 printf '%s\n' "export BIB_PDF_PATH='path/to/your/pdf/directory'" >> $HOME/.profile
+printf '%s\n' "export BIB_UNI_KEY='Key to access your journals by your university'" >> $HOME/.profile	# Not required
 ```
 
 To run `shbib`, you just need open your terminal, type `git clone https://github.com/huijunchen9260/shbib` to download this project, `cd` to the directory with `shbib` script, and run `shbib` by typing `./shbib`.
@@ -41,11 +59,16 @@ p - search online by metadata in PDF file
 w - search google scholar by text
 c - copy BibTeX entry from your $BIB
 o - open PDF file by BibTeX entry
+i - insert new BibTeX entry
+e - edit existing BibTeX entry
 b - manually build database by rename and encode metadata into PDF file
 B - automatically build database by rename and encode metadata into PDF file
 R - create new BibTeX entry sublibrary
+    store at: $BIB_PDF_PATH/Libs
 r - open existing BibTeX entry sublibrary
+    store at: $BIB_PDF_PATH/Libs
 n - write notes for BibTeX entry
+    store at: $BIB_PDF_PATH/Notes
 / - search the current page
     default: case-insensitive search
     contain uppercase: case-sensitive search

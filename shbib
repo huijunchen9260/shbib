@@ -83,7 +83,7 @@ esc() {
     esac
 }
 
-
+# Check whether all listed dependency is satisfied
 CheckDeps () {
     for CurDep in "$@"; do
 	command -v "$CurDep" 1> /dev/null 2>&1
@@ -95,6 +95,8 @@ CheckDeps () {
     unset CurDep
 }
 
+# OS detector
+# Controlling BIB_OPENER and clipboard
 get_os() {
     case $OSTYPE in
 	darwin*) BIB_OPENER=open; clipcopy=pbcopy ;;
@@ -104,10 +106,9 @@ get_os() {
 
 term_setup() {
     num=$1; shift
-    # space for status_line
-    bottom=$((LINES - 2))
-    top=3
-    fin=$(( bottom - (bottom - (top - 1)) % num ))
+    bottom=$((LINES - 2))				# space for bottom status_line
+    top=3		  				# space for top status_line
+    fin=$(( bottom - (bottom - (top - 1)) % num ))	# bottom for content printed
 
     stty=$(stty -g)
     stty -icanon -echo
@@ -215,12 +216,12 @@ arg_print() {
 arg_format() { # token
     esc EL0
     case "$token" in
-	's'|'c'|'o'|'n') printf %s "${1%$nl}" ;;
-	'?'|'e') printf %s "$1" ;;
+	's'|'c'|'o'|'n'|'e') printf %s "${1%$nl}" ;;
+	'?'|'i') printf %s "$1" ;;
         ''|'p'|'b'|'B'|'R'|'r') printf %s "${1##*/}" ;;
 	'q')
 	    case "$token_q" in
-	        ''|'p'|'sc'|'sg'|'so') printf %s "$1" ;;
+	        ''|'p'|'sc'|'sg'|'so'|'e') printf %s "$1" ;;
 		'b'|'B'|'Rc'|'Re') printf %s "${1%$nl}" ;;
 	    esac
 	    ;;
@@ -423,10 +424,6 @@ input() {
 
     esc DECRC
     esc DECTCEM l
-}
-
-bib_gen () {
-    bibtex="@"
 }
 
 cmd_run() {
@@ -762,6 +759,7 @@ restore() {
 yesno() {
     msg=$1 item=$2 token_q=$3 shift 3
 
+    term_setup 1
     num=1 y=1 y2=$top cur=$1 ltype= token=q
     redraw $num "$@"
 
@@ -847,10 +845,26 @@ key() {
 		term_scroll_down $num "$@"
 	    ;;
 
+            g?|H2)
+                case $y in
+                    1) continue ;;
+                esac
+
+                y=1 y2=$top cur=$1
+		redraw "$num" "$@"
+            ;;
+
+            G?|F2)
+		y=$# pos=$(( num * y - num + top ))
+		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
+		cur_assign "$y" "$@"
+		redraw "$num" "$@"
+            ;;
+
             l?|C2|"$esc") # ARROW RIGHT # token
 
 		case "$token" in
-		    'p'|'s'|'R'|'r') old_y=$y old_y2=$y2 old_pos=$pos old_cur=$cur ;;
+		    'p'|'s'|'R'|'r'|'i') old_y=$y old_y2=$y2 old_pos=$pos old_cur=$cur ;;
 		    'q')
 			case "$token_q" in
 			    'p'|'Re'|'Rc') old_y=$y old_y2=$y2 old_pos=$pos old_cur=$cur ;;
@@ -863,6 +877,12 @@ key() {
 			case "$cur" in
 			    "Yes")
 				case "$token_q" in
+				    'e')
+					cp '/tmp/bibfile.tmp' "$BIB"
+					set -- "$BIB updated; press h to leave"
+					num=1 y=1 y2=$top cur=$1 ltype= msg="Result" token=?
+					redraw $num "$@"
+					;;
 				    'sc')
 					grep -q "${bibtex%%$nl*}" "$BIB"
 					case $? in
@@ -1142,6 +1162,25 @@ key() {
 			cmd_run "${BIB_OPENER:="${READER:=xdg-open}"}" "$BIB_PDF_PATH/$bibkey.$extension"
 			redraw "$num" "$@"
 			;;
+		    'e')
+			bibkey=${cur%%$nl*}
+			bibkey=${bibkey##*BibTeX: }
+			bibfile="$(cat -u $BIB)"
+			search "$bibfile" '@' "$bibkey"
+			[ -n "$filt_out" ] &&
+			    {
+				tmpfile="/tmp/shbib.tmp"
+				printf '%s' "@$filt_out" > "$tmpfile"
+				term_setup 1
+				cmd_run "${BIB_OPENER:="${EDITOR:=vi}"}" "$tmpfile"
+				bibtex="$(cat -u "$tmpfile")"
+				printf '%s%s\n\n%s\n\n' "${bibfile%%@$filt_out*}" "$bibtex" "${bibfile##*@$filt_out}" > "/tmp/bibfile.tmp"
+				comparison=$(diff -u "$BIB" "/tmp/bibfile.tmp")
+				set -- 'Yes' \
+				       'No'
+				yesno "Is the diff between original file and edited file correct?" "$comparison" 'e' "$@"
+			    }
+			;;
 		    'p')
 			read -r type < "$cur"
 			file=${cur##*/}
@@ -1260,7 +1299,7 @@ key() {
 			term_setup $num
 			redraw "$num" "$@"
 			;;
-		    'e')
+		    'i')
 			category="$cur"
 			bib_form="BibTeX: ${nl}Doi: ${nl}URL: ${nl}Year: ${nl}Author(s): ${nl}Title: ${nl}Journal:"
 			input "Manually generate bibtex; press enter to insert next field; press Ctrl-C to leave" "$bib_form"
@@ -1268,8 +1307,11 @@ key() {
 			case $? in
 			    1)
 				unset category label doi url year author title journal
-				set -- $BIB_PDF_PATH/*.*
-				restore "$@"
+				IFS="$nl"
+				set -- $list
+				unset IFS
+				term_setup $num
+				redraw $num "$@"
 				;;
 			    0)
 				bibtex="@$category{$label,${nl}${tab}doi = {$doi},${nl}${tab}url = {$url},${nl}${tab}year = $year,${nl}${tab}author = {$author},${nl}${tab}title = {$title},${nl}${tab}journal = {$journal}${nl}}"
@@ -1379,7 +1421,7 @@ key() {
 		    1)
 			set -- 'Yes' \
 			       'No'
-			yesno "Fail to connect Crossref. Search in Google scholar?" "" 'sg' "$@"
+			yesno "$url Fail to connect Crossref. Search in Google scholar?" "" 'sg' "$@"
 			;;
 		    0)
 			IFS='|'
@@ -1415,47 +1457,36 @@ key() {
 		esac
 	    ;;
 
-	    e?)
-		set -- 'article' \
-		       'book' \
-		       'booklet' \
-		       'inbook' \
-		       'incollection' \
-		       'inproceedings' \
-		       'manual' \
-		       'mastersthesis' \
-		       'misc' \
-		       'phdthesis' \
-		       'proceedings' \
-		       'techreport' \
-		       'unpublished' \
-		       'online'
-		num=1 y=1 y2=$top cur=$1 ltype='Establish new BibTeX entry' msg='Choose entry category: ' token=e
+	    i?)
+		list="article${nl}book${nl}booklet${nl}inbook${nl}incollection${nl}inproceedings${nl}manual${nl}mastersthesis${nl}misc${nl}phdthesis${nl}proceedings${nl}techreport${nl}unpublished${nl}online"
+
+		IFS="$nl"
+		set -- $list
+		unset IFS
+
+		num=1 y=1 y2=$top cur=$1 ltype='Insert new BibTeX entry' msg='Choose entry category: ' token=i
 		redraw $num "$@"
 
 	    ;;
 
-	    o?)
+
+	    o?|c?|e?)
 		ref_gen "$BIB" "$@"
 
 		IFS='|'
 		set -- $list
 		unset IFS
-		num=6 y=1 y2=$top cur=$1 ltype="Open PDF file by $BIB" msg="Open PDF file by BibTeX entry" token=o
+		num=6 y=1 y2=$top cur=$1
+		case $key${esc:=0} in
+		    o?) ltype="Open PDF file by $BIB" msg="Open PDF file by BibTeX entry" token=o ;;
+		    c?) ltype="Copy BibTeX label" msg="Choose which BibTeX label?" token=c ;;
+		    e?) ltype="Edit BibTeX entry" msg="Edit which BibTeX entry?" token=e ;;
+		esac
+
 		term_setup $num
 		redraw "$num" "$@"
 	    ;;
 
-	    c?)
-		ref_gen "$BIB" "$@"
-
-		IFS='|'
-		set -- $list
-		unset IFS
-		num=6 y=1 y2=$top cur=$1 ltype="Copy BibTeX label" msg="Choose which BibTeX label?" token=c
-		term_setup $num
-		redraw "$num" "$@"
-	    ;;
 
 	    b?)
 		set -- $BIB_PDF_PATH/*.*
@@ -1561,22 +1592,6 @@ key() {
 		redraw "$num" "$@"
 	    ;;
 
-            g?|H2)
-                case $y in
-                    1) continue ;;
-                esac
-
-                y=1 y2=$top cur=$1
-		redraw "$num" "$@"
-            ;;
-
-            G?|F2)
-		y=$# pos=$(( num * y - num + top ))
-		y2=$(( pos < fin - (num - 1) ? pos : fin - (num - 1) ))
-		cur_assign "$y" "$@"
-		redraw "$num" "$@"
-            ;;
-
             /?) # token
                 prompt / r
 
@@ -1593,7 +1608,7 @@ key() {
 			    "$BIB_LIB_PATH/*$ans*"1) set -- 'no result' ;;
 			esac
 			;;
-		    's'|'c'|'o'|'n'|'B'|'e')
+		    's'|'c'|'o'|'e'|'n'|'B'|'i')
 			search "$list" '|' "$ans"
 			IFS='|'
 			set -- $filt_out
@@ -1604,7 +1619,7 @@ key() {
 			;;
 		    'q')
 			case "$token_q" in
-			    'p'|'sc'|'sg'|'so')
+			    'p'|'sc'|'sg'|'so'|'e')
 				num=1
 				search "$info" "$nl" "$ans"
 				IFS="$nl"
@@ -1643,7 +1658,8 @@ key() {
 			'w - search google scholar by text' \
 			'c - copy BibTeX entry from your $BIB' \
 			'o - open PDF file by BibTeX entry' \
-			'e - establish new BibTeX entry by editing ' \
+			'i - insert new BibTeX entry' \
+			'e - edit existing BibTeX entry' \
 			'b - manually build database by rename and encode metadata into PDF file' \
 			'B - automatically build database by rename and encode metadata into PDF file' \
 			'R - create new BibTeX entry sublibrary' \
