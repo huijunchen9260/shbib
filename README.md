@@ -23,11 +23,11 @@ A BibTeX-centric bibliography manager written in POSIX shell
 
 Search function:
 
-[![asciicast](https://asciinema.org/a/dAqUiKCVwkxcS0vNUyqd8fVnP.png)](https://asciinema.org/a/dAqUiKCVwkxcS0vNUyqd8fVnP)
+[![search](https://asciinema.org/a/dAqUiKCVwkxcS0vNUyqd8fVnP.png)](https://asciinema.org/a/dAqUiKCVwkxcS0vNUyqd8fVnP)
 
 Note function:
 
-[![asciicast](https://asciinema.org/a/JLILWWhC0PaAiEL69dTRbhlb0.png)](https://asciinema.org/a/JLILWWhC0PaAiEL69dTRbhlb0)
+[![note](https://asciinema.org/a/JLILWWhC0PaAiEL69dTRbhlb0.png)](https://asciinema.org/a/JLILWWhC0PaAiEL69dTRbhlb0)
 
 ## Introduction
 
